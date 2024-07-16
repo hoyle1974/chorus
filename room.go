@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"rogchap.com/v8go"
-	v8 "rogchap.com/v8go"
 )
 
 type RoomListener interface {
@@ -18,7 +17,7 @@ type Room struct {
 	id        string
 	lock      sync.Mutex
 	name      string
-	ctx       *v8.Context
+	ctx       *v8go.Context
 	listeners map[string]RoomListener
 }
 
@@ -32,7 +31,7 @@ func NewRoom(name string, adminScript string) *Room {
 	}
 
 	// Create a new Isolate for sandboxed execution
-	isolate := v8.NewIsolate()
+	isolate := v8go.NewIsolate()
 
 	data, err := os.ReadFile(adminScript)
 	if err != nil {
@@ -42,10 +41,10 @@ func NewRoom(name string, adminScript string) *Room {
 	content := string(data)
 
 	// Global object
-	global := v8.NewObjectTemplate(isolate)
+	global := v8go.NewObjectTemplate(isolate)
 
 	// sendMsg
-	sendMsg := v8.NewFunctionTemplate(isolate, func(info *v8.FunctionCallbackInfo) *v8.Value {
+	sendMsg := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
 		jsonString, err := v8go.JSONStringify(info.Context(), info.Args()[0])
 		if err != nil {
 			fmt.Println("Error ", err)
@@ -64,7 +63,7 @@ func NewRoom(name string, adminScript string) *Room {
 	}
 
 	// log
-	log := v8.NewFunctionTemplate(isolate, func(info *v8.FunctionCallbackInfo) *v8.Value {
+	log := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
 		fmt.Printf("%v\n", info.Args())
 		return nil // you can return a value back to the JS caller if required
 	})
@@ -74,18 +73,18 @@ func NewRoom(name string, adminScript string) *Room {
 	}
 
 	// NewRoom
-	newRoom := v8.NewFunctionTemplate(isolate, func(info *v8.FunctionCallbackInfo) *v8.Value {
+	newRoom := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
 		name := info.Args()[0].String()
 		script := info.Args()[1].String()
 
 		room := NewRoom(name, script)
 
 		// Create a new java object that represents a room
-		objTemplate := v8.NewObjectTemplate(isolate)
+		objTemplate := v8go.NewObjectTemplate(isolate)
 		objTemplate.Set("id", room.id)
 		objTemplate.Set("room", room)
 
-		join := v8.NewFunctionTemplate(isolate, func(info *v8.FunctionCallbackInfo) *v8.Value {
+		join := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
 			id := info.Args()[0].String()
 			conn := FindConnectionById(id)
 			room.Join(id, conn)
@@ -105,7 +104,7 @@ func NewRoom(name string, adminScript string) *Room {
 		fmt.Println("Set Error", err)
 	}
 
-	ctx := v8.NewContext(isolate, global) // new Context with the global Object set to our object template
+	ctx := v8go.NewContext(isolate, global) // new Context with the global Object set to our object template
 	ctx.RunScript(content, adminScript)
 
 	room.ctx = ctx
@@ -127,18 +126,18 @@ func (r *Room) callJSOnMessage(msg Message) {
 func (r *Room) sendMsg(msg Message) {
 	fmt.Println("sendMsg:", msg)
 
-	if msg.ReceiverId == "" {
-		fmt.Println("Sending to all listeners")
-		for _, l := range r.listeners {
-			l.OnMessage(msg)
-		}
-	} else {
+	if msg.ReceiverId != "" {
 		fmt.Println("Sending just to ", msg.ReceiverId)
 		l := r.listeners[msg.ReceiverId]
 		if l == nil {
 			fmt.Println("not found ", msg.ReceiverId)
 		}
 		l.OnMessage(msg)
+	} else {
+		fmt.Println("Sending to all listeners")
+		for _, l := range r.listeners {
+			l.OnMessage(msg)
+		}
 	}
 }
 
