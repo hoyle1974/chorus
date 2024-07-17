@@ -14,21 +14,32 @@ type RoomListener interface {
 }
 
 type Room struct {
-	id        string
+	id        RoomId
 	lock      sync.Mutex
 	name      string
 	ctx       *v8go.Context
-	listeners map[string]RoomListener
+	listeners map[ListenerId]RoomListener
+}
+
+var roomLock sync.Mutex
+var rooms = map[RoomId]*Room{}
+
+func FindRoom(roomId RoomId) *Room {
+	roomLock.Lock()
+	defer roomLock.Unlock()
+
+	return rooms[roomId]
 }
 
 func NewRoom(name string, adminScript string) *Room {
-	roomId := uuid.NewString()
-
 	room := &Room{
-		id:        roomId,
+		id:        RoomId("R" + uuid.NewString()),
 		name:      name,
-		listeners: map[string]RoomListener{},
+		listeners: map[ListenerId]RoomListener{},
 	}
+	roomLock.Lock()
+	rooms[room.id] = room
+	roomLock.Unlock()
 
 	// Create a new Isolate for sandboxed execution
 	isolate := v8go.NewIsolate()
@@ -52,7 +63,9 @@ func NewRoom(name string, adminScript string) *Room {
 		}
 
 		msg := NewMessageFromString(jsonString)
-		msg.SenderId = roomId
+		msg.MsgId = MessageId(uuid.NewString())
+		msg.RoomId = room.id
+		msg.SenderId = ListenerId(room.id)
 		room.sendMsg(msg)
 
 		return nil // you can return a value back to the JS caller if required
@@ -77,17 +90,17 @@ func NewRoom(name string, adminScript string) *Room {
 		name := info.Args()[0].String()
 		script := info.Args()[1].String()
 
-		room := NewRoom(name, script)
+		newRoom := NewRoom(name, script)
 
 		// Create a new java object that represents a room
 		objTemplate := v8go.NewObjectTemplate(isolate)
-		objTemplate.Set("id", room.id)
-		objTemplate.Set("room", room)
+		objTemplate.Set("id", newRoom.id)
+		objTemplate.Set("room", newRoom)
 
 		join := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
-			id := info.Args()[0].String()
+			id := ListenerId(info.Args()[0].String())
 			conn := FindConnectionById(id)
-			room.Join(id, conn)
+			newRoom.Join(id, conn)
 			return nil
 		})
 		objTemplate.Set("Join", join)
@@ -141,30 +154,36 @@ func (r *Room) sendMsg(msg Message) {
 	}
 }
 
-func (r *Room) Join(id string, listener RoomListener) {
+func (r *Room) Join(id ListenerId, listener RoomListener) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
 	r.listeners[id] = listener
 
-	r.callJSOnMessage(NewMessage(id, "", "Join", map[string]string{}))
+	r.callJSOnMessage(NewMessage(r.id, id, "", "Join", map[string]string{}))
 }
 
-func (r *Room) Leave(id string) {
+func (r *Room) Leave(id ListenerId) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
 	delete(r.listeners, id)
 
-	r.callJSOnMessage(NewMessage(id, "", "Leave", map[string]string{}))
+	r.callJSOnMessage(NewMessage(r.id, id, "", "Leave", map[string]string{}))
 }
 
 func (r *Room) Send(msg Message) {
+
 	r.lock.Lock()
 	defer r.lock.Unlock()
-	for _, l := range r.listeners {
-		l.OnMessage(msg)
+
+	for id, l := range r.listeners {
+		if msg.ReceiverId == "" || msg.ReceiverId == id {
+			l.OnMessage(msg)
+		}
 	}
-	r.callJSOnMessage(msg)
+	if msg.ReceiverId == "" || msg.ReceiverId == "room" {
+		r.callJSOnMessage(msg)
+	}
 
 }
