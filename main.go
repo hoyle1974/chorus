@@ -13,7 +13,11 @@ func main() {
 	}
 	defer ln.Close()
 
-	room := NewRoom("Default Lobby", "matchmaker.js")
+	room, err := NewRoom("Default Lobby", "matchmaker.js")
+	if err != nil {
+		fmt.Printf("Error: %v", err)
+		return
+	}
 
 	fmt.Println("Server listening on :8080")
 	for {

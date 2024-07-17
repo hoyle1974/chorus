@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"sync"
 
-	"github.com/google/uuid"
+	"github.com/lithammer/shortuuid/v4"
 )
 
 type Connection struct {
@@ -32,7 +33,7 @@ func (c *Connection) OnMessage(msg Message) {
 
 func NewConnection(conn net.Conn) *Connection {
 	c := Connection{
-		id:   ListenerId("L" + uuid.NewString()),
+		id:   ListenerId("L" + shortuuid.New()),
 		conn: conn,
 	}
 
@@ -48,22 +49,30 @@ func (c *Connection) Run(room *Room) {
 
 	// We have a new connection, let's join the global lobby
 
-	msg := NewMessage(room.id, c.id, "", "init", map[string]string{})
-	c.conn.Write([]byte(msg.String() + "\n"))
+	// msg := NewMessage(room.id, c.id, "", "init", map[string]string{"ListenerId": string(c.id)})
+	// c.conn.Write([]byte(msg.String() + "\n"))
 
 	room.Join(c.id, c)
 
 	buf := make([]byte, 65536)
 	for {
 		n, err := c.conn.Read(buf)
+		if err == io.EOF {
+			fmt.Println("Disconnect user ", c.id)
+			c.conn = nil
+			room.Leave(c.id)
+			return
+		}
 		if err != nil {
+			fmt.Println("*** ", err)
 			c.conn.Write([]byte(NewErrorMessage(room.id, c.id, err).String() + "\n"))
 			return
 		}
-
 		// Trim trailing newline (if present)
 		words := strings.Fields(strings.TrimSpace(string(buf[:n])))
-
+		if len(words) < 2 {
+			continue
+		}
 		msg := NewMessage(RoomId(words[0]), c.id, "room", string(words[1]), map[string]string{})
 
 		for t := 0; t < len(words)-2; t += 2 {

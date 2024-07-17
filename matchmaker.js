@@ -1,11 +1,16 @@
 var id= ""
 
+log("------------------------")
+log(JSON.stringify(thisRoom().Id))
+log("------------------------")
+
+
 
 function onJoin(msg) {
   if (id==="") {
     id = msg.SenderId
   } else {
-    room = NewRoom(id + " vs " + msg.SenderId, "tictactoe.js")
+    room = newRoom(id + " vs " + msg.SenderId, "tictactoe.js")
     room.Join(id)
     room.Join(msg.SenderId)
     id = ""

@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 
-	"github.com/google/uuid"
+	"github.com/lithammer/shortuuid/v4"
 )
 
 type RoomId string
@@ -31,7 +31,7 @@ func NewMessage(roomId RoomId, senderId ListenerId, receiverId ListenerId, cmd s
 	}
 
 	return Message{
-		MsgId:      MessageId(uuid.NewString()),
+		MsgId:      MessageId(shortuuid.New()),
 		RoomId:     roomId,
 		SenderId:   senderId,
 		ReceiverId: receiverId,
