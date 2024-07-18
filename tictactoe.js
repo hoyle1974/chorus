@@ -99,3 +99,13 @@ function onJoin(msg) {
 
     log('room is full')
 }
+
+function onLeave(msg) {
+    sendMsg({Cmd:"endgame"})
+}
+
+function onRoomEmpty() {
+    log("Room is empty, ending the room")
+    endRoom()
+}
+  

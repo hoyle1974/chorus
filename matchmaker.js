@@ -2,8 +2,6 @@ var id= ""
 
 
 function onJoin(msg) {  
-  log("onJoin")
-
   if (id==="") {
     log("first user joined",msg.SenderId)
     id = msg.SenderId
@@ -20,11 +18,14 @@ function onJoin(msg) {
 }
 
 function onLeave(msg) {
-  log("onLeave")
-
   if (msg.SenderId === id) {
     log("first user left",msg.SenderId)
     id = ""
   }
 }
+
+function onRoomEmpty() {
+}
+
+
   

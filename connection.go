@@ -28,7 +28,7 @@ func (c *Connection) OnMessage(msg Message) {
 	if c.conn == nil {
 		return
 	}
-	fmt.Println("OnMessage: ", msg)
+	// fmt.Println("OnMessage: ", msg)
 	c.conn.Write([]byte(msg.String() + "\n"))
 }
 

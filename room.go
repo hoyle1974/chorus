@@ -8,6 +8,7 @@ import (
 	"rogchap.com/v8go"
 )
 
+// Listen for messages in the room
 type RoomListener interface {
 	OnMessage(msg Message)
 }
@@ -68,6 +69,16 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 	// Global object
 	global := v8go.NewObjectTemplate(isolate)
 
+	// create global endRoom() in JS context
+	endRoom := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
+		EndRoom(room)
+		return nil
+	})
+	err = global.Set("endRoom", endRoom)
+	if err != nil {
+		return nil, fmt.Errorf("create endRoom function: %w", err)
+	}
+
 	// create global sendMsg in JS context
 	sendMsg := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
 		jsonString, err := v8go.JSONStringify(info.Context(), info.Args()[0])
@@ -85,7 +96,6 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 	})
 	err = global.Set("sendMsg", sendMsg)
 	if err != nil {
-		fmt.Println("Set Error", err)
 		return nil, fmt.Errorf("create sendMsg function: %w", err)
 	}
 
@@ -165,41 +175,42 @@ func NewRoom(name string, adminScript string) (*Room, error) {
 	room.ctx = ctx
 
 	roomLock.Lock()
-	rooms[room.id] = room
 	defer roomLock.Unlock()
+	rooms[room.id] = room
 
 	return room, nil
+}
+
+func EndRoom(room *Room) {
+	roomLock.Lock()
+	defer roomLock.Unlock()
+
+	fmt.Println("ending room ", room.id)
+	delete(rooms, room.id)
 }
 
 func (r *Room) callJSOnMessage(msg Message) error {
 	err := r.ctx.Global().Set("msg", msg.String())
 	if err != nil {
-		fmt.Println("*** ", err)
 		return err
 	}
-	//cmd := "if (typeof on" + msg.Cmd + " == \"function\") on" + msg.Cmd + "(JSON.parse(msg))"
 	cmd := "on" + msg.Cmd + "(JSON.parse(msg))"
-	fmt.Printf("@@@ %s : Running: %v\n", r.script, cmd)
+	// fmt.Printf("@@@ %s : Running: %v\n", r.script, cmd)
 	_, err = r.ctx.RunScript(cmd, "")
 	if err != nil {
-		fmt.Println("*** ", err)
+		// fmt.Println("@@@ %s : %v", r.script, err)
 		return err
 	}
 	return nil
 }
 
 func (r *Room) sendMsg(msg Message) {
-	fmt.Println("sendMsg:", msg)
-
 	if msg.ReceiverId != "" {
-		fmt.Println("Sending just to ", msg.ReceiverId)
 		l := r.listeners[msg.ReceiverId]
-		if l == nil {
-			fmt.Println("not found ", msg.ReceiverId)
+		if l != nil {
+			l.OnMessage(msg)
 		}
-		l.OnMessage(msg)
 	} else {
-		fmt.Println("Sending to all listeners")
 		for _, l := range r.listeners {
 			l.OnMessage(msg)
 		}
@@ -235,15 +246,21 @@ func (r *Room) Leave(id ListenerId) error {
 	return r.leave(id)
 }
 func (r *Room) leave(id ListenerId) error {
-	defer delete(r.listeners, id)
 
 	leaveMsg := NewMessage(r.id, id, "", "Leave", map[string]string{})
-	err := r.callJSOnMessage(leaveMsg)
-	if err != nil {
-		return err
-	}
+	_ = r.callJSOnMessage(leaveMsg)
 
 	r.sendMsg(leaveMsg)
+
+	delete(r.listeners, id)
+
+	if len(r.listeners) == 0 {
+		_, err := r.ctx.RunScript("onRoomEmpty()", "")
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
