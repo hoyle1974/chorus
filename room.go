@@ -22,6 +22,13 @@ type Room struct {
 	listeners map[ListenerId]RoomListener
 }
 
+func (r *Room) HasListener(listenerId ListenerId) bool {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	_, ok := r.listeners[listenerId]
+	return ok
+}
+
 func (r *Room) JSTemplate(isolate *v8go.Isolate) *v8go.ObjectTemplate {
 	// Create a new java object that represents a room
 	objTemplate := v8go.NewObjectTemplate(isolate)
@@ -226,7 +233,7 @@ func (r *Room) Join(id ListenerId, listener RoomListener) error {
 func (r *Room) join(id ListenerId, listener RoomListener) error {
 	r.listeners[id] = listener
 
-	joinMsg := NewMessage(r.id, id, "", "Join", map[string]string{})
+	joinMsg := NewMessage(r.id, id, "", "Join", map[string]interface{}{})
 
 	// Let the room know we have joined
 	err := r.callJSOnMessage(joinMsg)
@@ -247,7 +254,7 @@ func (r *Room) Leave(id ListenerId) error {
 }
 func (r *Room) leave(id ListenerId) error {
 
-	leaveMsg := NewMessage(r.id, id, "", "Leave", map[string]string{})
+	leaveMsg := NewMessage(r.id, id, "", "Leave", map[string]interface{}{})
 	_ = r.callJSOnMessage(leaveMsg)
 
 	r.sendMsg(leaveMsg)

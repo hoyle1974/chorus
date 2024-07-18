@@ -45,8 +45,23 @@ func NewConnection(conn net.Conn) *Connection {
 	return &c
 }
 
+func (c *Connection) Close() {
+	fmt.Println("Closing connection for ", c.id)
+
+	// Leave all rooms
+	roomLock.Lock()
+	defer roomLock.Unlock()
+	for _, room := range rooms {
+		if room.HasListener(c.id) {
+			room.leave(c.id)
+		}
+	}
+
+	c.conn.Close()
+}
+
 func (c *Connection) Run(room *Room) {
-	defer c.conn.Close()
+	defer c.Close()
 
 	// We have a new connection, let's join the global lobby
 
@@ -61,7 +76,6 @@ func (c *Connection) Run(room *Room) {
 		if err == io.EOF {
 			fmt.Println("Disconnect user ", c.id)
 			c.conn = nil
-			room.Leave(c.id)
 			return
 		}
 		if err != nil {
@@ -71,10 +85,39 @@ func (c *Connection) Run(room *Room) {
 		}
 		// Trim trailing newline (if present)
 		words := strings.Fields(strings.TrimSpace(string(buf[:n])))
+		if len(words) == 1 {
+			if words[0] == "exit" {
+				return
+			}
+
+			if words[0] == "info" {
+				info := map[string]interface{}{}
+
+				roomList := []interface{}{}
+				roomLock.Lock()
+				for roomId, room := range rooms {
+					if room.HasListener(c.id) {
+						roomList = append(roomList,
+							map[string]interface{}{
+								"roomId":    roomId,
+								"listeners": len(room.listeners),
+							},
+						)
+					}
+				}
+				roomLock.Unlock()
+
+				info["rooms"] = roomList
+
+				c.OnMessage(NewMessage("none", "none", c.id, "info", info))
+				continue
+			}
+		}
+
 		if len(words) < 2 {
 			continue
 		}
-		msg := NewMessage(RoomId(words[0]), c.id, "room", string(words[1]), map[string]string{})
+		msg := NewMessage(RoomId(words[0]), c.id, "room", string(words[1]), map[string]interface{}{})
 
 		for t := 0; t < len(words)-2; t += 2 {
 			key := words[t+2]

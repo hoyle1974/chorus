@@ -13,10 +13,10 @@ type Message struct {
 	SenderId   ListenerId
 	ReceiverId ListenerId
 	Cmd        string
-	Data       map[string]string
+	Data       map[string]interface{}
 }
 
-func NewMessage(roomId RoomId, senderId ListenerId, receiverId ListenerId, cmd string, data map[string]string) Message {
+func NewMessage(roomId RoomId, senderId ListenerId, receiverId ListenerId, cmd string, data map[string]interface{}) Message {
 	if roomId == "" {
 		panic("roomId must exist")
 	}
@@ -24,7 +24,7 @@ func NewMessage(roomId RoomId, senderId ListenerId, receiverId ListenerId, cmd s
 		panic("senderId must exist")
 	}
 	if data == nil {
-		data = map[string]string{}
+		data = map[string]interface{}{}
 	}
 
 	return Message{
@@ -40,13 +40,13 @@ func NewMessageFromString(msg string) Message {
 	var m Message
 	json.Unmarshal([]byte(msg), &m)
 	if m.Data == nil {
-		m.Data = map[string]string{}
+		m.Data = map[string]interface{}{}
 	}
 	return m
 }
 
 func NewErrorMessage(roomId RoomId, senderId ListenerId, err error) Message {
-	data := map[string]string{}
+	data := map[string]interface{}{}
 	data["err"] = err.Error()
 	return NewMessage(roomId, senderId, "", "error", data)
 }
