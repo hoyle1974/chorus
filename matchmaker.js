@@ -17,6 +17,10 @@ function onJoin(msg) {
   }
 }
 
+function onSay(msg) {
+  sendMsg({ReceiverId:"", Cmd:"say", Data:{"From":msg.SenderId, "Msg":msg.Data.Msg}})
+}
+
 function onLeave(msg) {
   if (msg.SenderId === id) {
     log("first user left",msg.SenderId)

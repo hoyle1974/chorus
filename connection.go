@@ -28,7 +28,6 @@ func (c *Connection) OnMessage(msg Message) {
 	if c.conn == nil {
 		return
 	}
-	// fmt.Println("OnMessage: ", msg)
 	c.conn.Write([]byte(msg.String() + "\n"))
 }
 
@@ -50,24 +49,27 @@ func (c *Connection) Close() {
 
 	// Leave all rooms
 	roomLock.Lock()
-	defer roomLock.Unlock()
 	for _, room := range rooms {
 		if room.HasListener(c.id) {
 			room.leave(c.id)
 		}
 	}
+	roomLock.Unlock()
 
-	c.conn.Close()
+	if c.conn != nil {
+		c.conn.Close()
+	}
+
+	connectionLock.Lock()
+	delete(connections, c.id)
+	connectionLock.Unlock()
+
 }
 
 func (c *Connection) Run(room *Room) {
 	defer c.Close()
 
 	// We have a new connection, let's join the global lobby
-
-	// msg := NewMessage(room.id, c.id, "", "init", map[string]string{"ListenerId": string(c.id)})
-	// c.conn.Write([]byte(msg.String() + "\n"))
-
 	room.Join(c.id, c)
 
 	buf := make([]byte, 65536)
@@ -139,7 +141,10 @@ func (c *Connection) Run(room *Room) {
 			msg.Data[key] = value
 		}
 
-		FindRoom(msg.RoomId).Send(msg)
+		room := FindRoom(msg.RoomId)
+		if room != nil {
+			room.Send(msg)
+		}
 	}
 
 }
