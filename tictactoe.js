@@ -91,7 +91,7 @@ function onJoin(msg) {
         sendMsg({ReceiverId:oUser, Cmd:"o-user"})
         ready++
         if (ready==2) {
-            sendMsg({ReceiverId:xUser, Cmd:"turn"})
+            sendMsg({ReceiverId:xUser, Cmd:"turn",Data:{Board:board}})
         }        
         return
     }
@@ -101,7 +101,11 @@ function onJoin(msg) {
 }
 
 function onLeave(msg) {
-    sendMsg({Cmd:"endgame"})
+    if (ready != 0) {
+        sendMsg({Cmd:"endgame"})
+        endRoom()
+        ready=0
+    }
 }
 
 function onRoomEmpty() {
