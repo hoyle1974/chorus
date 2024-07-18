@@ -102,6 +102,7 @@ func (c *Connection) Run(room *Room) {
 								"roomId":    roomId,
 								"listeners": len(room.listeners),
 								"script":    room.script,
+								"name":      room.name,
 							},
 						)
 					}
