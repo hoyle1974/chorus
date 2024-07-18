@@ -101,13 +101,26 @@ func (c *Connection) Run(room *Room) {
 							map[string]interface{}{
 								"roomId":    roomId,
 								"listeners": len(room.listeners),
+								"script":    room.script,
 							},
 						)
 					}
 				}
 				roomLock.Unlock()
 
+				listenerList := []interface{}{}
+				connectionLock.Lock()
+				for listenerId, _ := range connections {
+					listenerList = append(listenerList,
+						map[string]interface{}{
+							"id": listenerId,
+						},
+					)
+				}
+				connectionLock.Unlock()
+
 				info["rooms"] = roomList
+				info["connections"] = listenerList
 
 				c.OnMessage(NewMessage("none", "none", c.id, "info", info))
 				continue
