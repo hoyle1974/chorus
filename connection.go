@@ -38,8 +38,8 @@ func NewConnection(conn net.Conn) *Connection {
 	}
 
 	connectionLock.Lock()
-	defer connectionLock.Unlock()
 	connections[c.id] = &c
+	connectionLock.Unlock()
 
 	return &c
 }
