@@ -5,7 +5,6 @@ import (
 	"os"
 	"sync"
 
-	"github.com/lithammer/shortuuid/v4"
 	"rogchap.com/v8go"
 )
 
@@ -17,6 +16,7 @@ type Room struct {
 	id        RoomId
 	lock      sync.Mutex
 	name      string
+	script    string
 	ctx       *v8go.Context
 	listeners map[ListenerId]RoomListener
 }
@@ -77,7 +77,6 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 		}
 
 		msg := NewMessageFromString(jsonString)
-		msg.MsgId = MessageId(shortuuid.New())
 		msg.RoomId = room.id
 		msg.SenderId = ListenerId(room.id)
 		room.sendMsg(msg)
@@ -92,7 +91,7 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 
 	// create global log in JS context
 	log := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
-		fmt.Printf("%v\n", info.Args())
+		fmt.Printf("@@@ %v : %v\n", adminScriptFilename, info.Args())
 		return nil // you can return a value back to the JS caller if required
 	})
 	err = global.Set("log", log)
@@ -154,8 +153,9 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 
 func NewRoom(name string, adminScript string) (*Room, error) {
 	room := &Room{
-		id:        RoomId("R" + shortuuid.New()),
+		id:        RoomId("R" + UUIDString()),
 		name:      name,
+		script:    adminScript,
 		listeners: map[ListenerId]RoomListener{},
 	}
 	ctx, err := createScriptEnvironmentForRoom(room, adminScript)
@@ -177,8 +177,9 @@ func (r *Room) callJSOnMessage(msg Message) error {
 		fmt.Println("*** ", err)
 		return err
 	}
-	cmd := "if (typeof on" + msg.Cmd + " == \"on" + msg.Cmd + "\") on" + msg.Cmd + "(JSON.parse(msg))"
-	fmt.Println("Running: ", cmd)
+	//cmd := "if (typeof on" + msg.Cmd + " == \"function\") on" + msg.Cmd + "(JSON.parse(msg))"
+	cmd := "on" + msg.Cmd + "(JSON.parse(msg))"
+	fmt.Printf("@@@ %s : Running: %v\n", r.script, cmd)
 	_, err = r.ctx.RunScript(cmd, "")
 	if err != nil {
 		fmt.Println("*** ", err)
@@ -234,12 +235,11 @@ func (r *Room) Leave(id ListenerId) error {
 	return r.leave(id)
 }
 func (r *Room) leave(id ListenerId) error {
-	delete(r.listeners, id)
+	defer delete(r.listeners, id)
 
 	leaveMsg := NewMessage(r.id, id, "", "Leave", map[string]string{})
 	err := r.callJSOnMessage(leaveMsg)
 	if err != nil {
-		delete(r.listeners, id)
 		return err
 	}
 

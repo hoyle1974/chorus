@@ -1,24 +1,29 @@
 var id= ""
 
-log("------------------------")
-log(JSON.stringify(thisRoom().Id))
-log("------------------------")
 
+function onJoin(msg) {  
+  log("onJoin")
 
-
-function onJoin(msg) {
   if (id==="") {
+    log("first user joined",msg.SenderId)
     id = msg.SenderId
   } else {
+    log("second user joined",msg.SenderId)
+
     room = newRoom(id + " vs " + msg.SenderId, "tictactoe.js")
     room.Join(id)
     room.Join(msg.SenderId)
+
+    log("new room created and joined")
     id = ""
   }
 }
 
 function onLeave(msg) {
-  if (msg.SenderID === id) {
+  log("onLeave")
+
+  if (msg.SenderId === id) {
+    log("first user left",msg.SenderId)
     id = ""
   }
 }

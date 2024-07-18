@@ -6,8 +6,6 @@ import (
 	"net"
 	"strings"
 	"sync"
-
-	"github.com/lithammer/shortuuid/v4"
 )
 
 type Connection struct {
@@ -27,13 +25,16 @@ func FindConnectionById(id ListenerId) *Connection {
 
 // OnMessage implements RoomListener.
 func (c *Connection) OnMessage(msg Message) {
+	if c.conn == nil {
+		return
+	}
 	fmt.Println("OnMessage: ", msg)
 	c.conn.Write([]byte(msg.String() + "\n"))
 }
 
 func NewConnection(conn net.Conn) *Connection {
 	c := Connection{
-		id:   ListenerId("L" + shortuuid.New()),
+		id:   ListenerId("L" + UUIDString()),
 		conn: conn,
 	}
 

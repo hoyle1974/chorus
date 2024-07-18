@@ -9,7 +9,8 @@ function setCharAt(str,index,chr) {
     return str.substring(0,index) + chr + str.substring(index+1);
 }
 
-board = "........."
+//board = "........."
+board = "xx......."
 
 ready=0
 turn='x'

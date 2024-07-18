@@ -2,8 +2,6 @@ package main
 
 import (
 	"encoding/json"
-
-	"github.com/lithammer/shortuuid/v4"
 )
 
 type RoomId string
@@ -11,7 +9,6 @@ type ListenerId string
 type MessageId string
 
 type Message struct {
-	MsgId      MessageId
 	RoomId     RoomId
 	SenderId   ListenerId
 	ReceiverId ListenerId
@@ -31,7 +28,6 @@ func NewMessage(roomId RoomId, senderId ListenerId, receiverId ListenerId, cmd s
 	}
 
 	return Message{
-		MsgId:      MessageId(shortuuid.New()),
 		RoomId:     roomId,
 		SenderId:   senderId,
 		ReceiverId: receiverId,
