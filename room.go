@@ -2,9 +2,12 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"sync"
 
+	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/exp/rand"
 	"rogchap.com/v8go"
 )
 
@@ -14,12 +17,15 @@ type RoomListener interface {
 }
 
 type Room struct {
-	id        RoomId
-	lock      sync.Mutex
-	name      string
-	script    string
-	ctx       *v8go.Context
-	listeners map[ListenerId]RoomListener
+	logger     *slog.Logger
+	baseLogger *slog.Logger
+	id         RoomId
+	lock       sync.Mutex
+	name       string
+	script     string
+	ctx        *v8go.Context
+	style      lipgloss.Style
+	listeners  map[ListenerId]RoomListener
 }
 
 func (r *Room) HasListener(listenerId ListenerId) bool {
@@ -108,7 +114,8 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 
 	// create global log in JS context
 	log := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
-		fmt.Printf("@@@ %v : %v\n", adminScriptFilename, info.Args())
+		msg := room.style.Render(fmt.Sprintf("%v", info.Args()))
+		room.logger.Info(msg, "script", adminScriptFilename)
 		return nil // you can return a value back to the JS caller if required
 	})
 	err = global.Set("log", log)
@@ -121,16 +128,16 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 		name := info.Args()[0].String()
 		script := info.Args()[1].String()
 
-		newRoom, err := NewRoom(name, script)
+		newRoom, err := NewRoom(room.baseLogger, name, script)
 		if err != nil {
-			fmt.Printf("newRoom %v\n", err)
+			room.logger.Error(room.style.Render("newRoom"), "err", err)
 			return nil
 		}
 		objTemplate := newRoom.JSTemplate(isolate)
 
 		obj, err := objTemplate.NewInstance(info.Context())
 		if err != nil {
-			fmt.Printf("NewObjectTemplate %v\n", err)
+			room.logger.Error(room.style.Render("NewObjectTemplate"), "err", err)
 			return nil
 		}
 
@@ -146,7 +153,7 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 		objTemplate := room.JSTemplate(isolate)
 		obj, err := objTemplate.NewInstance(room.ctx)
 		if err != nil {
-			fmt.Println(fmt.Errorf("js objTemplate NewInstance: %w", err))
+			room.logger.Error(room.style.Render(fmt.Sprintf("js objTemplate NewInstance: %w", err)))
 			return nil
 		}
 		return obj.Value
@@ -168,13 +175,28 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 	return ctx, nil
 }
 
-func NewRoom(name string, adminScript string) (*Room, error) {
+func hex() string {
+	hexDigits := "0123456789ABCDEF"
+	return string(hexDigits[rand.Intn(len(hexDigits))])
+}
+
+func newRandColor() lipgloss.Color {
+	return lipgloss.Color("#" + hex() + hex() + hex() + hex() + hex() + hex())
+}
+
+func NewRoom(baseLogger *slog.Logger, name string, adminScript string) (*Room, error) {
 	room := &Room{
-		id:        RoomId("R" + UUIDString()),
-		name:      name,
-		script:    adminScript,
-		listeners: map[ListenerId]RoomListener{},
+		baseLogger: baseLogger,
+		id:         RoomId("R" + UUIDString()),
+		name:       name,
+		script:     adminScript,
+		listeners:  map[ListenerId]RoomListener{},
 	}
+	room.style = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(newRandColor())
+
+	room.logger = baseLogger.With("roomId", room.id, "name", name)
 	ctx, err := createScriptEnvironmentForRoom(room, adminScript)
 	if err != nil {
 		return nil, fmt.Errorf("createScriptEnvironmentForRoom: %w", err)
@@ -192,7 +214,7 @@ func EndRoom(room *Room) {
 	roomLock.Lock()
 	defer roomLock.Unlock()
 
-	fmt.Println("ending room ", room.id)
+	room.logger.Info(room.style.Render("ending room "))
 	delete(rooms, room.id)
 }
 

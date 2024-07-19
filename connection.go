@@ -1,16 +1,17 @@
 package main
 
 import (
-	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"strings"
 	"sync"
 )
 
 type Connection struct {
-	id   ListenerId
-	conn net.Conn
+	logger *slog.Logger
+	id     ListenerId
+	conn   net.Conn
 }
 
 var connectionLock sync.Mutex
@@ -31,11 +32,12 @@ func (c *Connection) OnMessage(msg Message) {
 	c.conn.Write([]byte(msg.String() + "\n"))
 }
 
-func NewConnection(conn net.Conn) *Connection {
+func NewConnection(logger *slog.Logger, conn net.Conn) *Connection {
 	c := Connection{
 		id:   ListenerId("L" + UUIDString()),
 		conn: conn,
 	}
+	c.logger = logger.With("connectionId", c.id)
 
 	connectionLock.Lock()
 	connections[c.id] = &c
@@ -45,7 +47,7 @@ func NewConnection(conn net.Conn) *Connection {
 }
 
 func (c *Connection) Close() {
-	fmt.Println("Closing connection for ", c.id)
+	c.logger.Info("Closing connection")
 
 	// Leave all rooms
 	roomLock.Lock()
@@ -76,12 +78,12 @@ func (c *Connection) Run(room *Room) {
 	for {
 		n, err := c.conn.Read(buf)
 		if err == io.EOF {
-			fmt.Println("Disconnect user ", c.id)
+			c.logger.Info("Disconnect user")
 			c.conn = nil
 			return
 		}
 		if err != nil {
-			fmt.Println("*** ", err)
+			c.logger.Error("connection error", err)
 			c.conn.Write([]byte(NewErrorMessage(room.id, c.id, err).String() + "\n"))
 			return
 		}

@@ -1,34 +1,40 @@
 package main
 
 import (
-	"fmt"
+	"log/slog"
 	"net"
+	"os"
+
+	"github.com/charmbracelet/log"
 )
 
 func main() {
+	handler := log.New(os.Stderr)
+	logger := slog.New(handler)
+
 	ln, err := net.Listen("tcp", ":8080") // Port can be changed here
 	if err != nil {
-		fmt.Println("Error listening:", err)
+		logger.Error("Error listening:", err)
 		return
 	}
 	defer ln.Close()
 
-	room, err := NewRoom("Default Lobby", "matchmaker.js")
+	room, err := NewRoom(logger, "Default Lobby", "matchmaker.js")
 	if err != nil {
-		fmt.Printf("Error: %v", err)
+		logger.Error("Error creating default lobby", err)
 		return
 	}
 
-	fmt.Println("Server listening on :8080")
+	logger.Info("Server listening on :8080")
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			fmt.Println("Error accepting connection:", err)
+			logger.Error("Error accepting connection:", err)
 			continue
 		}
-		fmt.Println("Client connected:", conn.RemoteAddr())
+		logger.Info("Client connected:", conn.RemoteAddr())
 
-		c := NewConnection(conn)
+		c := NewConnection(logger, conn)
 
 		go c.Run(room)
 	}
