@@ -1,4 +1,4 @@
-package main
+package room
 
 import (
 	"fmt"
@@ -7,28 +7,43 @@ import (
 	"sync"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/hoyle1974/chorus/message"
+	"github.com/hoyle1974/chorus/misc"
+	"github.com/hoyle1974/chorus/pubsub"
 	"golang.org/x/exp/rand"
 	"rogchap.com/v8go"
 )
 
+const globalLobbyId = misc.RoomId("GlobalLobby")
+
+func GetGlobalLobby(logger *slog.Logger) misc.RoomId {
+	lobby, err := NewRoomWithId(logger, globalLobbyId, "Default Lobby", "matchmaker.js")
+	if err != nil {
+		logger.Error("Error creating default lobby", err)
+		return ""
+	}
+	return lobby.Id
+}
+
 // Listen for messages in the room
 type RoomListener interface {
-	OnMessage(msg Message)
+	OnMessage(msg message.Message)
 }
 
 type Room struct {
 	logger     *slog.Logger
 	baseLogger *slog.Logger
-	id         RoomId
+	Id         misc.RoomId
 	lock       sync.Mutex
 	name       string
 	script     string
 	ctx        *v8go.Context
 	style      lipgloss.Style
-	listeners  map[ListenerId]RoomListener
+	listeners  map[misc.ListenerId]RoomListener
+	consumer   *pubsub.Consumer
 }
 
-func (r *Room) HasListener(listenerId ListenerId) bool {
+func (r *Room) HasListener(listenerId misc.ListenerId) bool {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	_, ok := r.listeners[listenerId]
@@ -38,19 +53,20 @@ func (r *Room) HasListener(listenerId ListenerId) bool {
 func (r *Room) JSTemplate(isolate *v8go.Isolate) *v8go.ObjectTemplate {
 	// Create a new java object that represents a room
 	objTemplate := v8go.NewObjectTemplate(isolate)
-	objTemplate.Set("Id", r.id)
+	objTemplate.Set("Id", r.Id)
 	objTemplate.Set("Room", r)
 
 	join := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
-		id := ListenerId(info.Args()[0].String())
-		conn := FindConnectionById(id)
-		r.join(id, conn)
+		//id := misc.ListenerId(info.Args()[0].String())
+		// TODO
+		//conn := connection.FindConnectionById(id)
+		//r.join(id, conn)
 		return nil
 	})
 	objTemplate.Set("Join", join)
 
 	leave := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
-		id := ListenerId(info.Args()[0].String())
+		id := misc.ListenerId(info.Args()[0].String())
 		r.leave(id)
 		return nil
 	})
@@ -60,9 +76,9 @@ func (r *Room) JSTemplate(isolate *v8go.Isolate) *v8go.ObjectTemplate {
 }
 
 var roomLock sync.Mutex
-var rooms = map[RoomId]*Room{}
+var rooms = map[misc.RoomId]*Room{}
 
-func FindRoom(roomId RoomId) *Room {
+func FindRoom(roomId misc.RoomId) *Room {
 	roomLock.Lock()
 	defer roomLock.Unlock()
 
@@ -84,7 +100,7 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 
 	// create global endRoom() in JS context
 	endRoom := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
-		EndRoom(room)
+		EndRoom(room.Id)
 		return nil
 	})
 	err = global.Set("endRoom", endRoom)
@@ -100,9 +116,9 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 			return nil
 		}
 
-		msg := NewMessageFromString(jsonString)
-		msg.RoomId = room.id
-		msg.SenderId = ListenerId(room.id)
+		msg := message.NewMessageFromString(jsonString)
+		msg.RoomId = room.Id
+		msg.SenderId = misc.ListenerId(room.Id)
 		room.sendMsg(msg)
 
 		return nil // you can return a value back to the JS caller if required
@@ -185,40 +201,65 @@ func newRandColor() lipgloss.Color {
 }
 
 func NewRoom(baseLogger *slog.Logger, name string, adminScript string) (*Room, error) {
+	return NewRoomWithId(baseLogger, misc.RoomId("R"+misc.UUIDString()), name, adminScript)
+}
+
+func NewRoomWithId(baseLogger *slog.Logger, roomId misc.RoomId, name string, adminScript string) (*Room, error) {
 	room := &Room{
 		baseLogger: baseLogger,
-		id:         RoomId("R" + UUIDString()),
+		Id:         roomId,
 		name:       name,
 		script:     adminScript,
-		listeners:  map[ListenerId]RoomListener{},
+		listeners:  map[misc.ListenerId]RoomListener{},
 	}
 	room.style = lipgloss.NewStyle().
 		Bold(true).
 		Foreground(newRandColor())
 
-	room.logger = baseLogger.With("roomId", room.id, "name", name)
+	room.logger = baseLogger.With("roomId", room.Id, "name", name)
 	ctx, err := createScriptEnvironmentForRoom(room, adminScript)
 	if err != nil {
 		return nil, fmt.Errorf("createScriptEnvironmentForRoom: %w", err)
 	}
 	room.ctx = ctx
 
+	if !pubsub.TopicExists(string(room.Id)) {
+		room.logger.Info("Creating topic")
+		err = pubsub.CreateTopic(string(room.Id))
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		room.logger.Info("Topic already exists")
+	}
+	room.consumer = pubsub.NewConsumer(string(room.Id), room)
+
 	roomLock.Lock()
 	defer roomLock.Unlock()
-	rooms[room.id] = room
+	rooms[room.Id] = room
+
+	go room.consumer.ProcessMessages()
 
 	return room, nil
 }
 
-func EndRoom(room *Room) {
+func (r *Room) OnMessageFromTopic(msg message.Message) {
+	r.logger.Info("Room.OnMessageFromTopic", "msg", msg)
+	// TODO
+	// Let the room know we have joined
+	r.callJSOnMessage(msg)
+}
+
+func EndRoom(roomId misc.RoomId) {
 	roomLock.Lock()
 	defer roomLock.Unlock()
 
-	room.logger.Info(room.style.Render("ending room "))
-	delete(rooms, room.id)
+	delete(rooms, roomId)
+
+	pubsub.DeleteTopic(string(roomId))
 }
 
-func (r *Room) callJSOnMessage(msg Message) error {
+func (r *Room) callJSOnMessage(msg message.Message) error {
 	err := r.ctx.Global().Set("msg", msg.String())
 	if err != nil {
 		return err
@@ -233,7 +274,22 @@ func (r *Room) callJSOnMessage(msg Message) error {
 	return nil
 }
 
-func (r *Room) sendMsg(msg Message) {
+func (r *Room) sendMsg(msg message.Message) {
+	pubsub.SendMessage(msg)
+	/*
+		if msg.ReceiverId != "" {
+			l := r.listeners[msg.ReceiverId]
+			if l != nil {
+				l.OnMessage(msg)
+			}
+		} else {
+			for _, l := range r.listeners {
+				l.OnMessage(msg)
+			}
+		}
+	*/
+}
+func (r *Room) onMessageFromTopic(msg message.Message) {
 	if msg.ReceiverId != "" {
 		l := r.listeners[msg.ReceiverId]
 		if l != nil {
@@ -246,37 +302,38 @@ func (r *Room) sendMsg(msg Message) {
 	}
 }
 
-func (r *Room) Join(id ListenerId, listener RoomListener) error {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+// func (r *Room) Join(id misc.ListenerId, listener RoomListener) error {
+// 	r.lock.Lock()
+// 	defer r.lock.Unlock()
 
-	return r.join(id, listener)
-}
-func (r *Room) join(id ListenerId, listener RoomListener) error {
-	r.listeners[id] = listener
+// 	return r.join(id, listener)
+// }
 
-	joinMsg := NewMessage(r.id, id, "", "Join", map[string]interface{}{})
+// func (r *Room) join(id misc.ListenerId, listener RoomListener) error {
+// 	r.listeners[id] = listener
 
-	// Let the room know we have joined
-	err := r.callJSOnMessage(joinMsg)
-	if err != nil {
-		delete(r.listeners, id)
-		return err
-	}
+// 	joinMsg := message.NewMessage(r.Id, id, "", "Join", map[string]interface{}{})
 
-	r.sendMsg(joinMsg)
-	return nil
-}
+// 	// Let the room know we have joined
+// 	err := r.callJSOnMessage(joinMsg)
+// 	if err != nil {
+// 		delete(r.listeners, id)
+// 		return err
+// 	}
 
-func (r *Room) Leave(id ListenerId) error {
+// 	r.sendMsg(joinMsg)
+// 	return nil
+// }
+
+func (r *Room) Leave(id misc.ListenerId) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
 	return r.leave(id)
 }
-func (r *Room) leave(id ListenerId) error {
+func (r *Room) leave(id misc.ListenerId) error {
 
-	leaveMsg := NewMessage(r.id, id, "", "Leave", map[string]interface{}{})
+	leaveMsg := message.NewMessage(r.Id, id, "", "Leave", map[string]interface{}{})
 	_ = r.callJSOnMessage(leaveMsg)
 
 	r.sendMsg(leaveMsg)
@@ -293,13 +350,13 @@ func (r *Room) leave(id ListenerId) error {
 	return nil
 }
 
-func (r *Room) Send(msg Message) error {
+func (r *Room) Send(msg message.Message) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
 	return r.send(msg)
 }
-func (r *Room) send(msg Message) error {
+func (r *Room) send(msg message.Message) error {
 	for id, l := range r.listeners {
 		if msg.ReceiverId == "" || msg.ReceiverId == id {
 			l.OnMessage(msg)
@@ -309,4 +366,75 @@ func (r *Room) send(msg Message) error {
 		return r.callJSOnMessage(msg)
 	}
 	return nil
+}
+
+var consumersLock = sync.Mutex{}
+var consumers = map[string]*pubsub.Consumer{}
+var roomsByListener = map[misc.ListenerId][]misc.RoomId{}
+
+func Join(roomId misc.RoomId, listenerId misc.ListenerId, handler pubsub.TopicMessageHandler) {
+	joinMsg := message.NewMessage(roomId, listenerId, "", "Join", map[string]interface{}{})
+	Send(joinMsg)
+
+	consumerId := string(roomId + ":" + misc.RoomId(listenerId))
+	consumersLock.Lock()
+	consumer := pubsub.NewConsumer(string(roomId), handler)
+	consumers[consumerId] = consumer
+	list, ok := roomsByListener[listenerId]
+	if !ok {
+		list = []misc.RoomId{}
+	}
+	list = append(list, roomId)
+	roomsByListener[listenerId] = list
+	consumersLock.Unlock()
+
+	go consumer.ProcessMessages()
+}
+
+func Leave(roomId misc.RoomId, listenerId misc.ListenerId) {
+	joinMsg := message.NewMessage(roomId, listenerId, "", "Leave", map[string]interface{}{})
+	Send(joinMsg)
+
+	consumerId := string(roomId + ":" + misc.RoomId(listenerId))
+	consumersLock.Lock()
+	consumer := consumers[consumerId]
+	delete(consumers, consumerId)
+	consumersLock.Unlock()
+	consumer.Close()
+}
+
+func LeaveAllRooms(listenerId misc.ListenerId) {
+	fmt.Println("LeaveAllRooms", listenerId)
+	consumersLock.Lock()
+	list, ok := roomsByListener[listenerId]
+	delete(roomsByListener, listenerId)
+	consumersLock.Unlock()
+
+	if ok {
+		for _, roomId := range list {
+			Leave(roomId, listenerId)
+		}
+	}
+}
+
+func RemoveAllRooms() {
+	listeners := []misc.ListenerId{}
+
+	consumersLock.Lock()
+	for listenerId, _ := range roomsByListener {
+		listeners = append(listeners, listenerId)
+	}
+	consumersLock.Unlock()
+
+	for _, listenerId := range listeners {
+		fmt.Println(4, listenerId)
+		LeaveAllRooms(listenerId)
+	}
+
+	EndRoom(globalLobbyId)
+
+}
+
+func Send(msg message.Message) {
+	pubsub.SendMessage(msg)
 }

@@ -4,28 +4,37 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/signal"
 
 	"github.com/charmbracelet/log"
+
+	"github.com/hoyle1974/chorus/connection"
+	"github.com/hoyle1974/chorus/room"
 )
 
 func main() {
 	handler := log.New(os.Stderr)
 	logger := slog.New(handler)
 
-	ln, err := net.Listen("tcp", ":8080") // Port can be changed here
+	ln, err := net.Listen("tcp", ":8181") // Port can be changed here
 	if err != nil {
 		logger.Error("Error listening:", err)
 		return
 	}
 	defer ln.Close()
 
-	room, err := NewRoom(logger, "Default Lobby", "matchmaker.js")
-	if err != nil {
-		logger.Error("Error creating default lobby", err)
-		return
-	}
+	// This stays the same for now as there is only 1 server
+	lobbyId := room.GetGlobalLobby(logger)
 
-	logger.Info("Server listening on :8080")
+	go func() {
+		sigchan := make(chan os.Signal, 1)
+		signal.Notify(sigchan, os.Interrupt)
+		<-sigchan
+		room.RemoveAllRooms()
+		os.Exit(0)
+	}()
+
+	logger.Info("Server listening on :8181")
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -34,8 +43,8 @@ func main() {
 		}
 		logger.Info("Client connected:", conn.RemoteAddr())
 
-		c := NewConnection(logger, conn)
+		c := connection.NewConnection(logger, conn)
 
-		go c.Run(room)
+		go c.Run(lobbyId)
 	}
 }

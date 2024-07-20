@@ -1,22 +1,20 @@
-package main
+package message
 
 import (
 	"encoding/json"
+
+	"github.com/hoyle1974/chorus/misc"
 )
 
-type RoomId string
-type ListenerId string
-type MessageId string
-
 type Message struct {
-	RoomId     RoomId
-	SenderId   ListenerId
-	ReceiverId ListenerId
+	RoomId     misc.RoomId
+	SenderId   misc.ListenerId
+	ReceiverId misc.ListenerId
 	Cmd        string
 	Data       map[string]interface{}
 }
 
-func NewMessage(roomId RoomId, senderId ListenerId, receiverId ListenerId, cmd string, data map[string]interface{}) Message {
+func NewMessage(roomId misc.RoomId, senderId misc.ListenerId, receiverId misc.ListenerId, cmd string, data map[string]interface{}) Message {
 	if roomId == "" {
 		panic("roomId must exist")
 	}
@@ -45,7 +43,7 @@ func NewMessageFromString(msg string) Message {
 	return m
 }
 
-func NewErrorMessage(roomId RoomId, senderId ListenerId, err error) Message {
+func NewErrorMessage(roomId misc.RoomId, senderId misc.ListenerId, err error) Message {
 	data := map[string]interface{}{}
 	data["err"] = err.Error()
 	return NewMessage(roomId, senderId, "", "error", data)
