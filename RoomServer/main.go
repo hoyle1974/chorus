@@ -9,12 +9,11 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/hoyle1974/chorus/misc"
-	"github.com/hoyle1974/chorus/room"
 	"github.com/hoyle1974/chorus/store"
 )
 
 func main() {
-	handler := log.New(os.Stderr)
+	handler := log.NewWithOptions(os.Stderr, log.Options{Level: log.DebugLevel})
 	logger := slog.New(handler)
 	state := NewGlobalState(logger)
 
@@ -28,9 +27,9 @@ func main() {
 
 	// See if we should be the owner of a room
 	go func() {
-		WaitForOwnership(state, room.GetGlobalLobbyId(), state.MachineId)
+		WaitForOwnership(state, misc.GetGlobalLobbyId(), state.MachineId)
 
-		room := GetRoom(state, room.GetGlobalLobbyId(), "matchmaker.js")
+		room := GetRoom(state, misc.GetGlobalLobbyId(), "matchmaker.js")
 		logger.Info("Global Lobby", "room", room)
 	}()
 
@@ -62,31 +61,4 @@ func WaitForOwnership(state GlobalServerState, roomId misc.RoomId, machineId mis
 	}()
 	// When this function returns we own the room
 	state.logger.Info("We are the owner", "room", roomId)
-}
-
-type Room struct {
-	logger  *slog.Logger
-	roomId  misc.RoomId
-	members []string
-}
-
-func (r Room) Destroy() {
-	r.logger.Info("Deleting room")
-	store.Del(r.roomId.RoomKey())
-}
-
-func GetRoom(state GlobalServerState, roomId misc.RoomId, adminScript string) Room {
-	store.Put(roomId.RoomKey(), adminScript, state.MachineLease.TTL)
-	state.MachineLease.AddKey(roomId.RoomKey())
-
-	members, _ := store.GetSet(roomId.RoomMembershipKey())
-	state.MachineLease.AddKey(roomId.RoomMembershipKey())
-
-	r := Room{
-		roomId:  roomId,
-		logger:  state.logger.With("roomId", roomId, "script", adminScript),
-		members: members,
-	}
-
-	return r
 }

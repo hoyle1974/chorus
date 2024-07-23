@@ -1,6 +1,8 @@
 package ds
 
 import (
+	"context"
+	"log"
 	"sync/atomic"
 
 	"github.com/redis/go-redis/v9"
@@ -23,5 +25,13 @@ func GetConn() *redis.Client {
 	if old != nil {
 		old.Close()
 	}
+
+	_, err := rdb.Ping(context.Background()).Result()
+	if err != nil {
+		log.Fatal("Redis connection failed:", err)
+	} else {
+		log.Println("Redis connection success")
+	}
+
 	return rdb
 }

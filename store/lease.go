@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 )
@@ -26,7 +25,7 @@ func NewLease(ttl time.Duration) *Lease {
 		for {
 			select {
 			case <-ctx.Done():
-				fmt.Println("Context cancelled")
+				// fmt.Println("Context cancelled")
 				return
 			case <-time.After(ttl):
 				l.renew()
@@ -51,7 +50,6 @@ func (l *Lease) renew() {
 	conn := getConn()
 	l.lock.RLock()
 	for _, key := range l.keys {
-		fmt.Println("Renew ", key)
 		conn.Expire(context.Background(), key, l.TTL*3/2)
 	}
 	defer l.lock.RUnlock()

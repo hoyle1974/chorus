@@ -1,8 +1,21 @@
 package misc
 
+type TopicId string
+
 type ConnectionId string
+
+func (id ConnectionId) ListenerId() ListenerId {
+	return ListenerId(id)
+}
+
 type RoomId string
 
+func (id RoomId) ListenerId() ListenerId {
+	return ListenerId(id)
+}
+func (id RoomId) Topic() TopicId {
+	return TopicId(id)
+}
 func (id RoomId) RoomKey() string {
 	return "rooms/" + string(id)
 }
@@ -19,4 +32,10 @@ type MachineId string
 
 func (id MachineId) MachineKey() string {
 	return string("machines/" + id)
+}
+
+const globalLobbyId = RoomId("GlobalLobby")
+
+func GetGlobalLobbyId() RoomId {
+	return globalLobbyId
 }

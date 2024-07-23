@@ -10,8 +10,9 @@ import (
 )
 
 func main() {
-	handler := log.New(os.Stderr)
+	handler := log.NewWithOptions(os.Stderr, log.Options{Level: log.DebugLevel})
 	logger := slog.New(handler)
+
 	state := NewGlobalState(logger)
 
 	ln, err := net.Listen("tcp", ":8181") // Port can be changed here

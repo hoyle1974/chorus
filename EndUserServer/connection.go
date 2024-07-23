@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -10,7 +11,6 @@ import (
 	"github.com/hoyle1974/chorus/message"
 	"github.com/hoyle1974/chorus/misc"
 	"github.com/hoyle1974/chorus/pubsub"
-	"github.com/hoyle1974/chorus/room"
 	"github.com/hoyle1974/chorus/store"
 )
 
@@ -31,22 +31,17 @@ func cleanupConnections() {
 	for _, v := range connections {
 		v.Close()
 	}
+	connections = map[misc.ConnectionId]*Connection{}
 }
-
-// func FindConnectionById(id misc.ConnectionId) *Connection {
-// 	connectionLock.Lock()
-// 	defer connectionLock.Unlock()
-
-// 	return connections[id]
-// }
-
-// // OnMessage implements RoomListener.
-// func (c *Connection) OnMessage(msg message.Message) {
-// 	if c.conn == nil {
-// 		return
-// 	}
-// 	c.conn.Write([]byte(msg.String() + "\n"))
-// }
+func cleanupConnection(cid misc.ConnectionId) {
+	connectionLock.Lock()
+	defer connectionLock.Unlock()
+	v, ok := connections[cid]
+	if ok {
+		v.Close()
+	}
+	delete(connections, cid)
+}
 
 func NewConnection(state GlobalServerState, conn net.Conn) *Connection {
 	c := Connection{
@@ -66,33 +61,42 @@ func NewConnection(state GlobalServerState, conn net.Conn) *Connection {
 }
 
 func (c *Connection) Close() {
-	c.logger.Info("Closing connection")
-
-	room.LeaveAllRooms(misc.ListenerId(c.id))
+	//room.LeaveAllRooms(misc.ListenerId(c.id))
 	store.RemoveConnectionInfo(c.state.MachineId, c.id)
 
 	if c.conn != nil {
 		c.conn.Close()
 	}
-
-	connectionLock.Lock()
-	delete(connections, c.id)
-	connectionLock.Unlock()
-
 }
 
 func (c *Connection) OnMessageFromTopic(msg message.Message) {
+	fmt.Println("-------- OnMessageFromTopic ----------")
+	if msg.SenderId == c.id.ListenerId() {
+		c.logger.Info("Ignoring my own message")
+		return
+	}
 	c.logger.Info("Connection.OnMessageFromTopic", "msg", msg)
 	if c.conn != nil && (msg.ReceiverId == misc.ListenerId(c.id) || msg.ReceiverId == "") {
 		c.conn.Write([]byte(msg.String() + "\n"))
+
+		if msg.Cmd == "Ping" {
+			pubsub.SendMessage(message.NewMessage(msg.RoomId, c.id.ListenerId(), msg.SenderId, "Pong", map[string]interface{}{}))
+		}
 	}
 }
 
 func (c *Connection) Run() {
-	defer c.Close()
+	defer cleanupConnection(c.id)
+	c.conn.Write([]byte(">>> Welcome " + c.id + "\n"))
 
 	// We have a new connection, let's join the global lobby
-	room.Join(room.GetGlobalLobbyId(), misc.ListenerId(c.id), c)
+	//room.Join(room.GetGlobalLobbyId(), misc.ListenerId(c.id), c)
+	c.conn.Write([]byte(">>> Joining " + misc.GetGlobalLobbyId() + "\n"))
+	c.consumer = pubsub.NewConsumer(misc.GetGlobalLobbyId().Topic(), c)
+	c.consumer.StartConsumer()
+	pubsub.SendMessage(message.NewMessage(misc.GetGlobalLobbyId(), c.id.ListenerId(), "", "Join", map[string]interface{}{}))
+
+	c.conn.Write([]byte(">>> Ready\n"))
 
 	buf := make([]byte, 65536)
 	for {
@@ -125,7 +129,7 @@ func (c *Connection) Run() {
 			value := words[t+3]
 			msg.Data[key] = value
 		}
-		room.Send(msg)
+		pubsub.SendMessage(msg)
 	}
 
 }
