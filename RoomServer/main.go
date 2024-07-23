@@ -8,17 +8,15 @@ import (
 
 	"github.com/charmbracelet/log"
 
-	"github.com/hoyle1974/chorus/machine"
 	"github.com/hoyle1974/chorus/misc"
 	"github.com/hoyle1974/chorus/room"
 	"github.com/hoyle1974/chorus/store"
 )
 
-var machineId = machine.NewMachineId("RS")
-
 func main() {
 	handler := log.New(os.Stderr)
 	logger := slog.New(handler)
+	state := NewGlobalState(logger)
 
 	go func() {
 		sigchan := make(chan os.Signal, 1)
@@ -30,9 +28,9 @@ func main() {
 
 	// See if we should be the owner of a room
 	go func() {
-		WaitForOwnership(logger, room.GetGlobalLobbyId(), machineId)
+		WaitForOwnership(state, room.GetGlobalLobbyId(), state.MachineId)
 
-		room := GetRoom(logger, room.GetGlobalLobbyId(), "matchmaker.js")
+		room := GetRoom(state, room.GetGlobalLobbyId(), "matchmaker.js")
 		logger.Info("Global Lobby", "room", room)
 	}()
 
@@ -43,13 +41,12 @@ func main() {
 
 }
 
-func WaitForOwnership(logger *slog.Logger, roomId misc.RoomId, machineId misc.MachineId) {
+func WaitForOwnership(state GlobalServerState, roomId misc.RoomId, machineId misc.MachineId) {
 	// See if we can be the owner of this room, block until we can
-	key := OwnershipKey(roomId)
 	ttl := time.Duration(10) * time.Second
 
 	for {
-		ok, _ := store.PutIfAbsent(key, string(machineId), ttl)
+		ok, _ := store.PutIfAbsent(roomId.OwnershipKey(), string(machineId), ttl)
 		if ok {
 			break
 		}
@@ -59,31 +56,37 @@ func WaitForOwnership(logger *slog.Logger, roomId misc.RoomId, machineId misc.Ma
 	go func() {
 		for {
 			// Touch the record, then sleep for 80% of the ttl
-			store.Put(key, string(machineId), ttl)
+			store.Put(roomId.OwnershipKey(), string(machineId), ttl)
 			time.Sleep(ttl * 8 / 10)
 		}
 	}()
 	// When this function returns we own the room
-	logger.Info("We are the owner", "room", roomId)
+	state.logger.Info("We are the owner", "room", roomId)
 }
 
 type Room struct {
-	logger *slog.Logger
-	key    string
-	roomId misc.RoomId
+	logger  *slog.Logger
+	roomId  misc.RoomId
+	members []string
 }
 
 func (r Room) Destroy() {
 	r.logger.Info("Deleting room")
-	store.Del(r.key)
+	store.Del(r.roomId.RoomKey())
 }
 
-func GetRoom(logger *slog.Logger, roomId misc.RoomId, adminScript string) Room {
-	key := RoomKey(roomId)
-	store.Put(key, adminScript, time.Duration(60)*time.Second)
+func GetRoom(state GlobalServerState, roomId misc.RoomId, adminScript string) Room {
+	store.Put(roomId.RoomKey(), adminScript, state.MachineLease.TTL)
+	state.MachineLease.AddKey(roomId.RoomKey())
 
-	return Room{key: key,
-		roomId: roomId,
-		logger: logger.With("roomId", roomId, "script", adminScript),
+	members, _ := store.GetSet(roomId.RoomMembershipKey())
+	state.MachineLease.AddKey(roomId.RoomMembershipKey())
+
+	r := Room{
+		roomId:  roomId,
+		logger:  state.logger.With("roomId", roomId, "script", adminScript),
+		members: members,
 	}
+
+	return r
 }

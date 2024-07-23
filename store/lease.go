@@ -1,7 +1,6 @@
 package store
 
 import (
-	"container/heap"
 	"context"
 	"fmt"
 	"sync"
@@ -9,52 +8,51 @@ import (
 )
 
 type Lease struct {
-	lock         sync.Mutex
-	heap         leaseKeyHeap
-	timerContext context.Context
+	lock   sync.RWMutex
+	keys   []string
+	TTL    time.Duration
+	cancel context.CancelFunc
 }
 
-func NewLease() *Lease {
-	l := Lease{
-		heap: *newLeaseKeyHeap(),
+func NewLease(ttl time.Duration) *Lease {
+	ctx, cancel := context.WithCancel(context.Background())
+	l := &Lease{
+		keys:   []string{},
+		TTL:    ttl,
+		cancel: cancel,
 	}
 
-	return &l
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				fmt.Println("Context cancelled")
+				return
+			case <-time.After(ttl):
+				l.renew()
+			}
+		}
+	}()
+
+	return l
 }
 
-func waitAndRun(ctx context.Context, dur time.Duration, f func()) {
-	select {
-	case <-ctx.Done():
-		fmt.Println("Context cancelled, exiting waitAndRun")
-		return
-	case <-time.After(dur):
-		f()
-	}
+func (l *Lease) Destroy() {
+	l.cancel()
 }
 
-func (l *Lease) AddKey(key string, ttl time.Duration) {
-	lk := leaseKey{
-		key:        key,
-		ttl:        ttl,
-		nextExpiry: time.Now().Add(ttl),
-	}
-
+func (l *Lease) AddKey(keys ...string) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
-	if len(l.heap) > 0 {
-		firstKey := l.heap[0].key
-		heap.Push(&l.heap, lk)
-		currentKey := l.heap[0].key
+	l.keys = append(l.keys, keys...)
+}
 
-		if firstKey != currentKey {
-			// Cancel current timer and start a new one
-
-		}
-
-	} else {
-		heap.Push(&l.heap, lk)
-
-		// Create a timer for this one
-		ctx := context.WithCancel(context.Background())
+func (l *Lease) renew() {
+	conn := getConn()
+	l.lock.RLock()
+	for _, key := range l.keys {
+		fmt.Println("Renew ", key)
+		conn.Expire(context.Background(), key, l.TTL*3/2)
 	}
+	defer l.lock.RUnlock()
 }

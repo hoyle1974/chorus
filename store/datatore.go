@@ -36,7 +36,6 @@ func PutIfAbsent(key string, value string, ttl time.Duration) (bool, error) {
 
 func Put(key string, value string, ttl time.Duration) error {
 	return getConn().Set(context.Background(), key, value, ttl).Err()
-
 }
 
 func Expire(key string, ttl time.Duration) error {
@@ -50,6 +49,19 @@ func Get(key string) (string, error) {
 
 func Del(key string) error {
 	return getConn().Del(context.Background(), key).Err()
+}
+
+func GetSet(key string) ([]string, error) {
+	sc := getConn().SMembers(context.Background(), key)
+	return sc.Val(), sc.Err()
+}
+
+func AddMemberToSet(key string, members ...string) error {
+	return getConn().SAdd(context.Background(), key, members).Err()
+}
+
+func RemoveMemberFromSet(key string, members ...string) error {
+	return getConn().SRem(context.Background(), key, members).Err()
 }
 
 // ------------------ composite commands
