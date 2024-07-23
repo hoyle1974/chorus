@@ -19,6 +19,7 @@ type Connection struct {
 	id       misc.ConnectionId
 	conn     net.Conn
 	consumer *pubsub.Consumer
+	state    GlobalServerState
 }
 
 var connectionLock sync.Mutex
@@ -47,14 +48,15 @@ func cleanupConnections() {
 // 	c.conn.Write([]byte(msg.String() + "\n"))
 // }
 
-func NewConnection(logger *slog.Logger, conn net.Conn) *Connection {
+func NewConnection(state GlobalServerState, conn net.Conn) *Connection {
 	c := Connection{
-		id:   misc.ConnectionId("C" + misc.UUIDString()),
-		conn: conn,
+		id:    misc.ConnectionId("C" + misc.UUIDString()),
+		conn:  conn,
+		state: state,
 	}
-	c.logger = logger.With("connectionId", c.id)
+	c.logger = state.logger.With("connectionId", c.id)
 
-	store.PutConnectionInfo(machineId, c.id)
+	store.PutConnectionInfo(state.MachineId, c.id)
 
 	connectionLock.Lock()
 	connections[c.id] = &c
@@ -67,7 +69,7 @@ func (c *Connection) Close() {
 	c.logger.Info("Closing connection")
 
 	room.LeaveAllRooms(misc.ListenerId(c.id))
-	store.RemoveConnectionInfo(machineId, c.id)
+	store.RemoveConnectionInfo(c.state.MachineId, c.id)
 
 	if c.conn != nil {
 		c.conn.Close()

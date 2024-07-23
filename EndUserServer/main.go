@@ -7,14 +7,12 @@ import (
 	"os/signal"
 
 	"github.com/charmbracelet/log"
-	"github.com/hoyle1974/chorus/machine"
 )
-
-var machineId = machine.NewMachineId("EUS")
 
 func main() {
 	handler := log.New(os.Stderr)
 	logger := slog.New(handler)
+	state := NewGlobalState(logger)
 
 	ln, err := net.Listen("tcp", ":8181") // Port can be changed here
 	if err != nil {
@@ -32,16 +30,16 @@ func main() {
 		os.Exit(0)
 	}()
 
-	logger.Info("EndUserServer listening on :8181")
+	state.logger.Info("EndUserServer listening on :8181")
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			logger.Error("Error accepting connection:", err)
+			state.logger.Error("Error accepting connection:", err)
 			continue
 		}
-		logger.Info("Client connected:", conn.RemoteAddr())
+		state.logger.Info("Client connected:", conn.RemoteAddr())
 
-		c := NewConnection(logger, conn)
+		c := NewConnection(state, conn)
 		go c.Run()
 	}
 }
