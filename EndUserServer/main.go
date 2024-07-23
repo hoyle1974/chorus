@@ -7,10 +7,10 @@ import (
 	"os/signal"
 
 	"github.com/charmbracelet/log"
-
-	"github.com/hoyle1974/chorus/connection"
-	"github.com/hoyle1974/chorus/room"
+	"github.com/hoyle1974/chorus/machine"
 )
+
+var machineId = machine.NewMachineId("EUS")
 
 func main() {
 	handler := log.New(os.Stderr)
@@ -23,18 +23,16 @@ func main() {
 	}
 	defer ln.Close()
 
-	// This stays the same for now as there is only 1 server
-	lobbyId := room.GetGlobalLobby(logger)
-
 	go func() {
 		sigchan := make(chan os.Signal, 1)
 		signal.Notify(sigchan, os.Interrupt)
 		<-sigchan
-		room.RemoveAllRooms()
+		// Do any cleanup
+		cleanupConnections()
 		os.Exit(0)
 	}()
 
-	logger.Info("Server listening on :8181")
+	logger.Info("EndUserServer listening on :8181")
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -43,8 +41,7 @@ func main() {
 		}
 		logger.Info("Client connected:", conn.RemoteAddr())
 
-		c := connection.NewConnection(logger, conn)
-
-		go c.Run(lobbyId)
+		c := NewConnection(logger, conn)
+		go c.Run()
 	}
 }

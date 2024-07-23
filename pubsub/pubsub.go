@@ -3,16 +3,46 @@ package pubsub
 import (
 	"context"
 	"encoding/json"
-	"sync"
 
+	"github.com/hoyle1974/chorus/ds"
 	"github.com/hoyle1974/chorus/message"
-	"github.com/hoyle1974/chorus/misc"
-	"github.com/twmb/franz-go/pkg/kadm"
-	"github.com/twmb/franz-go/pkg/kgo"
-
-	"fmt"
+	"github.com/redis/go-redis/v9"
 )
 
+type TopicMessageHandler interface {
+	OnMessageFromTopic(msg message.Message)
+}
+
+func SendMessage(msg message.Message) {
+	ds.GetConn().Publish(context.Background(), string(msg.RoomId), msg)
+}
+
+type Consumer struct {
+	topic      string
+	msgHandler TopicMessageHandler
+	subscriber *redis.PubSub
+}
+
+func NewConsumer(topic string, msgHandler TopicMessageHandler) *Consumer {
+	subscriber := ds.GetConn().Subscribe(context.Background(), topic)
+	return &Consumer{topic: topic, msgHandler: msgHandler, subscriber: subscriber}
+
+}
+func (c *Consumer) ProcessMessages() {
+	ctx := context.Background()
+	for {
+		rmsg, err := c.subscriber.ReceiveMessage(ctx)
+		if err != nil {
+			var msg message.Message
+
+			if err := json.Unmarshal([]byte(rmsg.Payload), &msg); err != nil {
+				c.msgHandler.OnMessageFromTopic(msg)
+			}
+		}
+	}
+}
+
+/*
 var admin = newAdmin()
 
 func TopicExists(topic string) bool {
@@ -182,3 +212,4 @@ func (c *Consumer) ProcessMessages() {
 func (c *Consumer) Close() {
 	c.client.Close()
 }
+*/

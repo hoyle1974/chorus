@@ -1,4 +1,4 @@
-package connection
+package main
 
 import (
 	"io"
@@ -11,6 +11,7 @@ import (
 	"github.com/hoyle1974/chorus/misc"
 	"github.com/hoyle1974/chorus/pubsub"
 	"github.com/hoyle1974/chorus/room"
+	"github.com/hoyle1974/chorus/store"
 )
 
 type Connection struct {
@@ -23,20 +24,28 @@ type Connection struct {
 var connectionLock sync.Mutex
 var connections = map[misc.ConnectionId]*Connection{}
 
-func FindConnectionById(id misc.ConnectionId) *Connection {
+func cleanupConnections() {
 	connectionLock.Lock()
 	defer connectionLock.Unlock()
-
-	return connections[id]
-}
-
-// OnMessage implements RoomListener.
-func (c *Connection) OnMessage(msg message.Message) {
-	if c.conn == nil {
-		return
+	for _, v := range connections {
+		v.Close()
 	}
-	c.conn.Write([]byte(msg.String() + "\n"))
 }
+
+// func FindConnectionById(id misc.ConnectionId) *Connection {
+// 	connectionLock.Lock()
+// 	defer connectionLock.Unlock()
+
+// 	return connections[id]
+// }
+
+// // OnMessage implements RoomListener.
+// func (c *Connection) OnMessage(msg message.Message) {
+// 	if c.conn == nil {
+// 		return
+// 	}
+// 	c.conn.Write([]byte(msg.String() + "\n"))
+// }
 
 func NewConnection(logger *slog.Logger, conn net.Conn) *Connection {
 	c := Connection{
@@ -44,6 +53,8 @@ func NewConnection(logger *slog.Logger, conn net.Conn) *Connection {
 		conn: conn,
 	}
 	c.logger = logger.With("connectionId", c.id)
+
+	store.PutConnectionInfo(machineId, c.id)
 
 	connectionLock.Lock()
 	connections[c.id] = &c
@@ -56,6 +67,7 @@ func (c *Connection) Close() {
 	c.logger.Info("Closing connection")
 
 	room.LeaveAllRooms(misc.ListenerId(c.id))
+	store.RemoveConnectionInfo(machineId, c.id)
 
 	if c.conn != nil {
 		c.conn.Close()
@@ -74,11 +86,11 @@ func (c *Connection) OnMessageFromTopic(msg message.Message) {
 	}
 }
 
-func (c *Connection) Run(roomId misc.RoomId) {
+func (c *Connection) Run() {
 	defer c.Close()
 
 	// We have a new connection, let's join the global lobby
-	room.Join(roomId, misc.ListenerId(c.id), c)
+	room.Join(room.GetGlobalLobbyId(), misc.ListenerId(c.id), c)
 
 	buf := make([]byte, 65536)
 	for {
@@ -90,7 +102,7 @@ func (c *Connection) Run(roomId misc.RoomId) {
 		}
 		if err != nil {
 			c.logger.Error("connection error", err)
-			c.conn.Write([]byte(message.NewErrorMessage(roomId, misc.ListenerId(c.id), err).String() + "\n"))
+			c.conn = nil
 			return
 		}
 		// Trim trailing newline (if present)
@@ -98,42 +110,6 @@ func (c *Connection) Run(roomId misc.RoomId) {
 		if len(words) == 1 {
 			if words[0] == "exit" {
 				return
-			}
-
-			if words[0] == "info" {
-				info := map[string]interface{}{}
-
-				roomList := []interface{}{}
-				// roomLock.Lock()
-				// for roomId, room := range rooms {
-				// 	if room.HasListener(c.id) {
-				// 		roomList = append(roomList,
-				// 			map[string]interface{}{
-				// 				"roomId":    roomId,
-				// 				"listeners": len(room.listeners),
-				// 				"script":    room.script,
-				// 				"name":      room.name,
-				// 			},
-				// 		)
-				// 	}
-				// }
-				// roomLock.Unlock()
-				listenerList := []interface{}{}
-				// connectionLock.Lock()
-				// for listenerId, _ := range connections {
-				// 	listenerList = append(listenerList,
-				// 		map[string]interface{}{
-				// 			"id": listenerId,
-				// 		},
-				// 	)
-				// }
-				// connectionLock.Unlock()
-
-				info["rooms"] = roomList
-				info["connections"] = listenerList
-
-				c.OnMessage(message.NewMessage("none", "none", misc.ListenerId(c.id), "info", info))
-				continue
 			}
 		}
 
@@ -147,7 +123,6 @@ func (c *Connection) Run(roomId misc.RoomId) {
 			value := words[t+3]
 			msg.Data[key] = value
 		}
-
 		room.Send(msg)
 	}
 

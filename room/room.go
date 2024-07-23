@@ -16,6 +16,12 @@ import (
 
 const globalLobbyId = misc.RoomId("GlobalLobby")
 
+func GetGlobalLobbyId() misc.RoomId {
+	return globalLobbyId
+}
+
+// -------------- OLD functions
+
 func GetGlobalLobby(logger *slog.Logger) misc.RoomId {
 	lobby, err := NewRoomWithId(logger, globalLobbyId, "Default Lobby", "matchmaker.js")
 	if err != nil {
@@ -61,13 +67,15 @@ func (r *Room) JSTemplate(isolate *v8go.Isolate) *v8go.ObjectTemplate {
 		// TODO
 		//conn := connection.FindConnectionById(id)
 		//r.join(id, conn)
+		//Join(r.Id, misc.ListenerId(id))
 		return nil
 	})
 	objTemplate.Set("Join", join)
 
 	leave := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
 		id := misc.ListenerId(info.Args()[0].String())
-		r.leave(id)
+		//r.leave(id)
+		Leave(r.Id, misc.ListenerId(id))
 		return nil
 	})
 	objTemplate.Set("Leave", leave)
@@ -223,15 +231,15 @@ func NewRoomWithId(baseLogger *slog.Logger, roomId misc.RoomId, name string, adm
 	}
 	room.ctx = ctx
 
-	if !pubsub.TopicExists(string(room.Id)) {
-		room.logger.Info("Creating topic")
-		err = pubsub.CreateTopic(string(room.Id))
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		room.logger.Info("Topic already exists")
-	}
+	// if !pubsub.TopicExists(string(room.Id)) {
+	// 	room.logger.Info("Creating topic")
+	// 	err = pubsub.CreateTopic(string(room.Id))
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// } else {
+	// 	room.logger.Info("Topic already exists")
+	// }
 	room.consumer = pubsub.NewConsumer(string(room.Id), room)
 
 	roomLock.Lock()
@@ -256,7 +264,7 @@ func EndRoom(roomId misc.RoomId) {
 
 	delete(rooms, roomId)
 
-	pubsub.DeleteTopic(string(roomId))
+	// pubsub.DeleteTopic(string(roomId))
 }
 
 func (r *Room) callJSOnMessage(msg message.Message) error {
@@ -395,12 +403,12 @@ func Leave(roomId misc.RoomId, listenerId misc.ListenerId) {
 	joinMsg := message.NewMessage(roomId, listenerId, "", "Leave", map[string]interface{}{})
 	Send(joinMsg)
 
-	consumerId := string(roomId + ":" + misc.RoomId(listenerId))
-	consumersLock.Lock()
-	consumer := consumers[consumerId]
-	delete(consumers, consumerId)
-	consumersLock.Unlock()
-	consumer.Close()
+	// consumerId := string(roomId + ":" + misc.RoomId(listenerId))
+	// consumersLock.Lock()
+	// consumer := consumers[consumerId]
+	// delete(consumers, consumerId)
+	// consumersLock.Unlock()
+	// consumer.Close()
 }
 
 func LeaveAllRooms(listenerId misc.ListenerId) {
@@ -427,7 +435,6 @@ func RemoveAllRooms() {
 	consumersLock.Unlock()
 
 	for _, listenerId := range listeners {
-		fmt.Println(4, listenerId)
 		LeaveAllRooms(listenerId)
 	}
 

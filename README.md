@@ -6,4 +6,10 @@ This works well enough.
 
 Step 2 - Route everything through RedPanda/Kafka.  How does this change things
 
-A user connects to the server.  It is given rooms to listen to.  It connects to that rooms topic and filters based on criteria.
+- Create an EndUser server that let's users connect and provides access to the system.
+    - Whe a user connects they join the GlobalLobby 
+        - To Join a Room
+            - A record keyed by the roomid is updated to have the connection id
+            - We start consuming the rooomid topic 
+
+            
