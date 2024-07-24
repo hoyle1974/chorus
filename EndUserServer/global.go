@@ -32,7 +32,7 @@ func (s GlobalServerState) OnMessageFromTopic(m pubsub.Message) {
 
 	if msg.Cmd == "ClientJoin" {
 		connectionId := misc.ConnectionId(msg.ReceiverId)
-		conn := findConnection(connectionId)
+		conn := findClientConnection(connectionId)
 		roomId := misc.RoomId(msg.Data["RoomId"].(string))
 		conn.joinRoom(roomId)
 	}

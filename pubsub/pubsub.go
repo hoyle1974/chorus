@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/charmbracelet/log"
 	"github.com/hoyle1974/chorus/ds"
 	"github.com/hoyle1974/chorus/misc"
 	"github.com/redis/go-redis/v9"
@@ -39,20 +40,28 @@ type Consumer struct {
 }
 
 func NewConsumer(log *slog.Logger, topic misc.TopicId, msgHandler TopicMessageHandler) *Consumer {
-	newLog := log.With("topic", topic)
-
-	newLog.Debug("pubsub.NewConsumer", "topic", topic)
+	log.Debug("pubsub.NewConsumer", "topic", topic)
 	pubsub := ds.GetConn().PSubscribe(context.Background(), string(topic))
-	consumer := &Consumer{topic: topic, msgHandler: msgHandler, pubsub: pubsub}
+	consumer := &Consumer{log: log, topic: topic, msgHandler: msgHandler, pubsub: pubsub}
 	go func() {
 		// If we haven't start this consumer in 10 seconds then log something
 		time.Sleep(time.Duration(10) * time.Second)
 		if !consumer.ready.Load() {
-			newLog.Error("Created a consumer for a topicbut it was not started within 10 seconds!")
+			log.Error("Created a consumer for a topicbut it was not started within 10 seconds!", "topic", topic)
 		}
 	}()
 
 	return consumer
+}
+
+func (c *Consumer) AddTopic(topic misc.TopicId) {
+	log.Debug("pubsub.AddTopic", "topic", topic)
+	c.pubsub.Subscribe(context.Background(), string(topic))
+}
+
+func (c *Consumer) RemoveTopic(topic misc.TopicId) {
+	log.Debug("pubsub.RemoveTopic", "topic", topic)
+	c.pubsub.Unsubscribe(context.Background(), string(topic))
 }
 
 func (c *Consumer) StartConsumer(v Message) {

@@ -14,7 +14,7 @@ import (
 	"github.com/hoyle1974/chorus/store"
 )
 
-type Connection struct {
+type ClientConnection struct {
 	logger   *slog.Logger
 	id       misc.ConnectionId
 	conn     net.Conn
@@ -23,7 +23,7 @@ type Connection struct {
 }
 
 var connectionLock sync.Mutex
-var connections = map[misc.ConnectionId]*Connection{}
+var connections = map[misc.ConnectionId]*ClientConnection{}
 
 func cleanupConnections() {
 	connectionLock.Lock()
@@ -31,7 +31,7 @@ func cleanupConnections() {
 	for _, v := range connections {
 		v.Close()
 	}
-	connections = map[misc.ConnectionId]*Connection{}
+	connections = map[misc.ConnectionId]*ClientConnection{}
 }
 func cleanupConnection(cid misc.ConnectionId) {
 	connectionLock.Lock()
@@ -43,8 +43,8 @@ func cleanupConnection(cid misc.ConnectionId) {
 	delete(connections, cid)
 }
 
-func NewConnection(state GlobalServerState, conn net.Conn) *Connection {
-	c := Connection{
+func NewConnection(state GlobalServerState, conn net.Conn) *ClientConnection {
+	c := ClientConnection{
 		id:    misc.ConnectionId("C" + misc.UUIDString()),
 		conn:  conn,
 		state: state,
@@ -59,7 +59,7 @@ func NewConnection(state GlobalServerState, conn net.Conn) *Connection {
 
 	return &c
 }
-func findConnection(id misc.ConnectionId) *Connection {
+func findClientConnection(id misc.ConnectionId) *ClientConnection {
 	connectionLock.Lock()
 	defer connectionLock.Unlock()
 
@@ -68,7 +68,7 @@ func findConnection(id misc.ConnectionId) *Connection {
 	return conn
 }
 
-func (c *Connection) Close() {
+func (c *ClientConnection) Close() {
 	//room.LeaveAllRooms(misc.ListenerId(c.id))
 	store.RemoveConnectionInfo(c.state.MachineId, c.id)
 
@@ -77,7 +77,7 @@ func (c *Connection) Close() {
 	}
 }
 
-func (c *Connection) OnMessageFromTopic(m pubsub.Message) {
+func (c *ClientConnection) OnMessageFromTopic(m pubsub.Message) {
 	msg := m.(*message.Message)
 
 	fmt.Println("-------- OnMessageFromTopic ----------")
@@ -97,15 +97,19 @@ func (c *Connection) OnMessageFromTopic(m pubsub.Message) {
 	}
 }
 
-func (c *Connection) joinRoom(roomId misc.RoomId) {
+func (c *ClientConnection) joinRoom(roomId misc.RoomId) {
 	c.conn.Write([]byte(">>> Joining " + roomId + "\n"))
-	c.consumer = pubsub.NewConsumer(c.logger, roomId.Topic(), c)
+	if c.consumer == nil {
+		c.consumer = pubsub.NewConsumer(c.logger, roomId.Topic(), c)
+	} else {
+		c.consumer.AddTopic(roomId.Topic())
+	}
 	c.consumer.StartConsumer(&message.Message{})
 	msg := message.NewMessage(roomId, c.id.ListenerId(), "", "Join", map[string]interface{}{})
 	pubsub.SendMessage(&msg)
 }
 
-func (c *Connection) Run() {
+func (c *ClientConnection) Run() {
 	defer cleanupConnection(c.id)
 	c.conn.Write([]byte(">>> Welcome " + c.id + "\n"))
 
