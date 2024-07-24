@@ -59,6 +59,14 @@ func NewConnection(state GlobalServerState, conn net.Conn) *Connection {
 
 	return &c
 }
+func findConnection(id misc.ConnectionId) *Connection {
+	connectionLock.Lock()
+	defer connectionLock.Unlock()
+
+	conn, _ := connections[id]
+
+	return conn
+}
 
 func (c *Connection) Close() {
 	//room.LeaveAllRooms(misc.ListenerId(c.id))
@@ -69,7 +77,9 @@ func (c *Connection) Close() {
 	}
 }
 
-func (c *Connection) OnMessageFromTopic(msg message.Message) {
+func (c *Connection) OnMessageFromTopic(m pubsub.Message) {
+	msg := m.(*message.Message)
+
 	fmt.Println("-------- OnMessageFromTopic ----------")
 	if msg.SenderId == c.id.ListenerId() {
 		c.logger.Info("Ignoring my own message")
@@ -80,9 +90,19 @@ func (c *Connection) OnMessageFromTopic(msg message.Message) {
 		c.conn.Write([]byte(msg.String() + "\n"))
 
 		if msg.Cmd == "Ping" {
-			pubsub.SendMessage(message.NewMessage(msg.RoomId, c.id.ListenerId(), msg.SenderId, "Pong", map[string]interface{}{}))
+			msg := message.NewMessage(msg.RoomId, c.id.ListenerId(), msg.SenderId, "Pong", map[string]interface{}{})
+
+			pubsub.SendMessage(&msg)
 		}
 	}
+}
+
+func (c *Connection) joinRoom(roomId misc.RoomId) {
+	c.conn.Write([]byte(">>> Joining " + roomId + "\n"))
+	c.consumer = pubsub.NewConsumer(c.logger, roomId.Topic(), c)
+	c.consumer.StartConsumer(&message.Message{})
+	msg := message.NewMessage(roomId, c.id.ListenerId(), "", "Join", map[string]interface{}{})
+	pubsub.SendMessage(&msg)
 }
 
 func (c *Connection) Run() {
@@ -90,11 +110,7 @@ func (c *Connection) Run() {
 	c.conn.Write([]byte(">>> Welcome " + c.id + "\n"))
 
 	// We have a new connection, let's join the global lobby
-	//room.Join(room.GetGlobalLobbyId(), misc.ListenerId(c.id), c)
-	c.conn.Write([]byte(">>> Joining " + misc.GetGlobalLobbyId() + "\n"))
-	c.consumer = pubsub.NewConsumer(misc.GetGlobalLobbyId().Topic(), c)
-	c.consumer.StartConsumer()
-	pubsub.SendMessage(message.NewMessage(misc.GetGlobalLobbyId(), c.id.ListenerId(), "", "Join", map[string]interface{}{}))
+	c.joinRoom(misc.GetGlobalLobbyId())
 
 	c.conn.Write([]byte(">>> Ready\n"))
 
@@ -129,7 +145,7 @@ func (c *Connection) Run() {
 			value := words[t+3]
 			msg.Data[key] = value
 		}
-		pubsub.SendMessage(msg)
+		pubsub.SendMessage(&msg)
 	}
 
 }

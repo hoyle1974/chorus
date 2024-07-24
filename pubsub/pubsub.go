@@ -2,59 +2,69 @@ package pubsub
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"log/slog"
+	"sync/atomic"
+	"time"
 
 	"github.com/hoyle1974/chorus/ds"
-	"github.com/hoyle1974/chorus/message"
 	"github.com/hoyle1974/chorus/misc"
 	"github.com/redis/go-redis/v9"
 )
 
 type TopicMessageHandler interface {
-	OnMessageFromTopic(msg message.Message)
+	OnMessageFromTopic(msg Message)
 }
 
-func SendMessage(msg message.Message) {
-	fmt.Println("pubsub.SendMessage to", msg.RoomId.Topic(), ":", msg)
-	b, err := json.Marshal(msg)
-	if err != nil {
-		panic(err)
-	}
-	err = ds.GetConn().Publish(context.Background(), string(msg.RoomId.Topic()), b).Err()
+type Message interface {
+	String() string
+	Topic() misc.TopicId
+	Unmarshal([]byte)
+}
+
+func SendMessage(msg Message) {
+	fmt.Println("pubsub.SendMessage to", msg.Topic(), ":", msg)
+	err := ds.GetConn().Publish(context.Background(), string(msg.Topic()), msg.String()).Err()
 	if err != nil {
 		panic(err)
 	}
 }
 
 type Consumer struct {
+	log        *slog.Logger
 	topic      misc.TopicId
 	msgHandler TopicMessageHandler
 	pubsub     *redis.PubSub
+	ready      atomic.Bool
 }
 
-func NewConsumer(topic misc.TopicId, msgHandler TopicMessageHandler) *Consumer {
+func NewConsumer(log *slog.Logger, topic misc.TopicId, msgHandler TopicMessageHandler) *Consumer {
+	newLog := log.With("topic", topic)
+
+	newLog.Debug("pubsub.NewConsumer", "topic", topic)
 	pubsub := ds.GetConn().PSubscribe(context.Background(), string(topic))
+	consumer := &Consumer{topic: topic, msgHandler: msgHandler, pubsub: pubsub}
+	go func() {
+		// If we haven't start this consumer in 10 seconds then log something
+		time.Sleep(time.Duration(10) * time.Second)
+		if !consumer.ready.Load() {
+			newLog.Error("Created a consumer for a topicbut it was not started within 10 seconds!")
+		}
+	}()
 
-	return &Consumer{topic: topic, msgHandler: msgHandler, pubsub: pubsub}
+	return consumer
 }
 
-func (c *Consumer) StartConsumer() {
-	go c.processMessages()
+func (c *Consumer) StartConsumer(v Message) {
+	c.ready.Store(true)
+	go c.processMessages(v)
 }
 
-func (c *Consumer) processMessages() {
-	fmt.Println("pubsub.Consumer.processMessages", c.topic)
+func (c *Consumer) processMessages(v Message) {
 	// Listen for messages
 	ch := c.pubsub.Channel()
-	for rmsg := range ch {
-		var msg message.Message
-
-		if err := json.Unmarshal([]byte(rmsg.Payload), &msg); err != nil {
-			fmt.Println("--- error ", err)
-		} else {
-			c.msgHandler.OnMessageFromTopic(msg)
-			fmt.Println("pubsub.Consumer.ProcessMessage from", c.topic, ":", msg)
-		}
+	for redisMsg := range ch {
+		v.Unmarshal([]byte(redisMsg.Payload))
+		c.msgHandler.OnMessageFromTopic(v)
 	}
 }

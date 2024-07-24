@@ -2,6 +2,7 @@ var id= ""
 
 
 function onJoin(msg) {  
+  log("Hello from onJoin")
   if (id==="") {
     log("first user joined",msg.SenderId)
     id = msg.SenderId

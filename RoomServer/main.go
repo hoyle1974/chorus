@@ -29,7 +29,7 @@ func main() {
 	go func() {
 		WaitForOwnership(state, misc.GetGlobalLobbyId(), state.MachineId)
 
-		room := GetRoom(state, misc.GetGlobalLobbyId(), "matchmaker.js")
+		room := GetRoom(state, misc.GetGlobalLobbyId(), "Global Lobby", "matchmaker.js")
 		logger.Info("Global Lobby", "room", room)
 	}()
 

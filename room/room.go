@@ -234,13 +234,13 @@ func NewRoomWithId(baseLogger *slog.Logger, roomId misc.RoomId, name string, adm
 	// } else {
 	// 	room.logger.Info("Topic already exists")
 	// }
-	room.consumer = pubsub.NewConsumer(room.RoomId.Topic(), room)
+	//room.consumer = pubsub.NewConsumer(room.RoomId.Topic(), room)
 
 	roomLock.Lock()
 	defer roomLock.Unlock()
 	rooms[room.RoomId] = room
 
-	room.consumer.StartConsumer()
+	room.consumer.StartConsumer(&message.Message{})
 
 	return room, nil
 }
@@ -277,7 +277,7 @@ func (r *Room) callJSOnMessage(msg message.Message) error {
 }
 
 func (r *Room) sendMsg(msg message.Message) {
-	pubsub.SendMessage(msg)
+	pubsub.SendMessage(&msg)
 	/*
 		if msg.ReceiverId != "" {
 			l := r.listeners[msg.ReceiverId]
@@ -380,7 +380,7 @@ func Join(roomId misc.RoomId, listenerId misc.ListenerId, handler pubsub.TopicMe
 
 	consumerId := string(roomId + ":" + misc.RoomId(listenerId))
 	consumersLock.Lock()
-	consumer := pubsub.NewConsumer(roomId.Topic(), handler)
+	consumer := pubsub.NewConsumer(nil, roomId.Topic(), handler)
 	consumers[consumerId] = consumer
 	list, ok := roomsByListener[listenerId]
 	if !ok {
@@ -390,7 +390,7 @@ func Join(roomId misc.RoomId, listenerId misc.ListenerId, handler pubsub.TopicMe
 	roomsByListener[listenerId] = list
 	consumersLock.Unlock()
 
-	consumer.StartConsumer()
+	//consumer.StartConsumer()
 }
 
 func Leave(roomId misc.RoomId, listenerId misc.ListenerId) {
@@ -436,5 +436,5 @@ func RemoveAllRooms() {
 }
 
 func Send(msg message.Message) {
-	pubsub.SendMessage(msg)
+	pubsub.SendMessage(&msg)
 }

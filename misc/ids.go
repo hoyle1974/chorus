@@ -33,6 +33,9 @@ type MachineId string
 func (id MachineId) MachineKey() string {
 	return string("machines/" + id)
 }
+func (id MachineId) ClientCmdTopic() TopicId {
+	return TopicId("topics/machines/" + id + "/clientcmd")
+}
 
 const globalLobbyId = RoomId("GlobalLobby")
 

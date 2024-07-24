@@ -67,10 +67,15 @@ func RemoveMemberFromSet(key string, members ...string) error {
 // ------------------ composite commands
 
 func PutConnectionInfo(machineId misc.MachineId, id misc.ConnectionId) {
-	key := "connections/" + string(machineId) + "/" + string(id)
-	Put(key, string(id), time.Duration(0))
+	key := "connections/" + string(id)
+	Put(key, string(machineId), time.Duration(0))
 }
 func RemoveConnectionInfo(machineId misc.MachineId, id misc.ConnectionId) {
-	key := "connections/" + string(machineId) + "/" + string(id)
+	key := "connections/" + string(id)
 	Del(key)
+}
+func GetConnectionInfo(id misc.ConnectionId) misc.MachineId {
+	key := "connections/" + string(id)
+	m, _ := Get(key)
+	return misc.MachineId(m)
 }

@@ -32,7 +32,7 @@ func (r *Room) Destroy() {
 	store.Del(r.roomId.RoomKey())
 }
 
-func GetRoom(state GlobalServerState, roomId misc.RoomId, adminScript string) *Room {
+func GetRoom(state GlobalServerState, roomId misc.RoomId, name string, adminScript string) *Room {
 	state.Dist.Put(roomId.RoomKey(), adminScript, state.MachineLease)
 
 	r := &Room{
@@ -48,22 +48,25 @@ func GetRoom(state GlobalServerState, roomId misc.RoomId, adminScript string) *R
 	}
 	r.ctx = ctx
 
-	r.consumer = pubsub.NewConsumer(roomId.Topic(), r)
-	r.consumer.StartConsumer()
+	r.consumer = pubsub.NewConsumer(r.logger, roomId.Topic(), r)
+	r.consumer.StartConsumer(&message.Message{})
 	time.Sleep(time.Duration(1) * time.Second)
 
 	// Ask anyone in the room to respond
 	msg := message.NewMessage(roomId, roomId.ListenerId(), "", "Ping", map[string]interface{}{})
-	pubsub.SendMessage(msg)
+	pubsub.SendMessage(&msg)
 
 	return r
 }
 
-func (r *Room) OnMessageFromTopic(msg message.Message) {
+func (r *Room) OnMessageFromTopic(m pubsub.Message) {
+	msg := m.(*message.Message)
+
 	r.logger.Info("Room.OnMessageFromTopic", "msg", msg)
 
 	if msg.RoomId != r.roomId {
-		r.logger.Error("Received an error for the wrong room", "targetRoomId", msg.RoomId, "roomId", r.roomId)
+		fmt.Println(msg)
+		r.logger.Error("Received an error for the wrong room", "targetRoomId", msg.RoomId)
 		return
 	}
 
@@ -87,7 +90,7 @@ func (r *Room) OnMessageFromTopic(msg message.Message) {
 
 }
 
-func (r *Room) callJSOnMessage(msg message.Message) error {
+func (r *Room) callJSOnMessage(msg *message.Message) error {
 	err := r.ctx.Global().Set("msg", msg.String())
 	if err != nil {
 		return err
@@ -137,7 +140,7 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 		msg.RoomId = room.roomId
 		msg.SenderId = room.roomId.ListenerId()
 		//TODO room.sendMsg(msg)
-		pubsub.SendMessage(msg)
+		pubsub.SendMessage(&msg)
 
 		return nil // you can return a value back to the JS caller if required
 	})
@@ -148,9 +151,7 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 
 	// create global log in JS context
 	log := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
-		// TODO msg := room.style.Render(fmt.Sprintf("%v", info.Args()))
 		msg := fmt.Sprintf("%v", info.Args())
-
 		room.logger.Info(msg, "script", adminScriptFilename)
 		return nil // you can return a value back to the JS caller if required
 	})
@@ -164,7 +165,7 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 		name := info.Args()[0].String()
 		script := info.Args()[1].String()
 
-		newRoom := GetRoom(room.state, misc.RoomId(name), script)
+		newRoom := GetRoom(room.state, misc.RoomId(misc.UUIDString()), name, script)
 		objTemplate := newRoom.JSTemplate(isolate)
 
 		obj, err := objTemplate.NewInstance(info.Context())
@@ -214,11 +215,15 @@ func (r *Room) JSTemplate(isolate *v8go.Isolate) *v8go.ObjectTemplate {
 	objTemplate.Set("Room", r)
 
 	join := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
-		//id := misc.ListenerId(info.Args()[0].String())
-		// TODO
-		//conn := connection.FindConnectionById(id)
-		//r.join(id, conn)
-		//Join(r.Id, misc.ListenerId(id))
+		id := misc.ConnectionId(info.Args()[0].String())
+		mid := store.GetConnectionInfo(id)
+		fmt.Println("Looked up ", id, " and found on ", mid)
+
+		// What EUS is that client on?
+		cmd := message.NewClientCmd(mid, id.ListenerId(), "ClientJoin", map[string]interface{}{"RoomId": r.roomId})
+		fmt.Println("Create ", cmd)
+		pubsub.SendMessage(&cmd)
+
 		return nil
 	})
 	objTemplate.Set("Join", join)

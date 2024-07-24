@@ -49,7 +49,14 @@ func NewErrorMessage(roomId misc.RoomId, senderId misc.ListenerId, err error) Me
 	return NewMessage(roomId, senderId, "", "error", data)
 }
 
-func (m Message) String() string {
+func (m *Message) String() string {
 	jsonData, _ := json.Marshal(m)
 	return string(jsonData)
+}
+func (m *Message) Topic() misc.TopicId {
+	return m.RoomId.Topic()
+}
+
+func (m *Message) Unmarshal(payload []byte) {
+	json.Unmarshal(payload, &m)
 }
