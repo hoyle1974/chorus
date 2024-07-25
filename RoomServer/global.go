@@ -26,11 +26,7 @@ func NewGlobalState(logger *slog.Logger) GlobalServerState {
 		Dist:         distributed.NewDist(ds.GetConn()),
 	}
 
-	err := store.Put(ss.MachineId.MachineKey(), "true", ss.MachineLease.TTL)
-	if err != nil {
-		panic(err)
-	}
-	ss.MachineLease.AddKey(ss.MachineId.MachineKey())
+	ss.Dist.Put(ss.MachineId.MachineKey(), "true", ss.MachineLease)
 
 	return ss
 }

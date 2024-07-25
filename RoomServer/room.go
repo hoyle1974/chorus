@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"time"
 
 	"github.com/hoyle1974/chorus/distributed"
 	"github.com/hoyle1974/chorus/message"
@@ -19,44 +18,18 @@ import (
 // You try to create two with the same room Id only one will work and
 // the other will wait for the other server to go away.
 type Room struct {
-	state    GlobalServerState
-	logger   *slog.Logger
-	roomId   misc.RoomId
-	members  distributed.Set
-	consumer *pubsub.Consumer
-	ctx      *v8go.Context
+	state       GlobalServerState
+	roomService *RoomService
+	logger      *slog.Logger
+	info        RoomInfo
+	members     distributed.Set
+	consumer    *pubsub.Consumer
+	ctx         *v8go.Context
 }
 
 func (r *Room) Destroy() {
 	r.logger.Info("Deleting room")
-	store.Del(r.roomId.RoomKey())
-}
-
-func GetRoom(state GlobalServerState, roomId misc.RoomId, name string, adminScript string) *Room {
-	state.Dist.Put(roomId.RoomKey(), adminScript, state.MachineLease)
-
-	r := &Room{
-		state:   state,
-		roomId:  roomId,
-		logger:  state.logger.With("roomId", roomId, "script", adminScript),
-		members: state.Dist.BindSet(roomId.RoomMembershipKey(), state.MachineLease),
-	}
-	ctx, err := createScriptEnvironmentForRoom(r, adminScript)
-	if err != nil {
-		state.logger.Error("createScriptEnvironmentForRoom", "error", err)
-		return nil
-	}
-	r.ctx = ctx
-
-	r.consumer = pubsub.NewConsumer(r.logger, roomId.Topic(), r)
-	r.consumer.StartConsumer(&message.Message{})
-	time.Sleep(time.Duration(1) * time.Second)
-
-	// Ask anyone in the room to respond
-	msg := message.NewMessage(roomId, roomId.ListenerId(), "", "Ping", map[string]interface{}{})
-	pubsub.SendMessage(&msg)
-
-	return r
+	store.Del(r.info.RoomId.RoomKey())
 }
 
 func (r *Room) OnMessageFromTopic(m pubsub.Message) {
@@ -64,7 +37,7 @@ func (r *Room) OnMessageFromTopic(m pubsub.Message) {
 
 	r.logger.Info("Room.OnMessageFromTopic", "msg", msg)
 
-	if msg.RoomId != r.roomId {
+	if msg.RoomId != r.info.RoomId {
 		fmt.Println(msg)
 		r.logger.Error("Received an error for the wrong room", "targetRoomId", msg.RoomId)
 		return
@@ -73,17 +46,17 @@ func (r *Room) OnMessageFromTopic(m pubsub.Message) {
 	if msg.Cmd == "Pong" {
 		r.logger.Debug("Pong", "memberId", msg.SenderId)
 		r.members.SAdd(string(msg.SenderId))
-		store.AddMemberToSet(r.roomId.RoomMembershipKey(), string(msg.SenderId))
+		store.AddMemberToSet(r.info.RoomId.RoomMembershipKey(), string(msg.SenderId))
 	}
 	if msg.Cmd == "Join" {
 		r.logger.Debug("Join", "memberId", msg.SenderId)
 		r.members.SAdd(string(msg.SenderId))
-		store.AddMemberToSet(r.roomId.RoomMembershipKey(), string(msg.SenderId))
+		store.AddMemberToSet(r.info.RoomId.RoomMembershipKey(), string(msg.SenderId))
 	}
 	if msg.Cmd == "Leave" {
 		r.logger.Debug("Leave", "memberId", msg.SenderId)
 		r.members.SRem(string(msg.SenderId))
-		store.RemoveMemberFromSet(r.roomId.RoomMembershipKey(), string(msg.SenderId))
+		store.RemoveMemberFromSet(r.info.RoomId.RoomMembershipKey(), string(msg.SenderId))
 	}
 
 	r.callJSOnMessage(msg)
@@ -137,8 +110,8 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 		}
 
 		msg := message.NewMessageFromString(jsonString)
-		msg.RoomId = room.roomId
-		msg.SenderId = room.roomId.ListenerId()
+		msg.RoomId = room.info.RoomId
+		msg.SenderId = room.info.RoomId.ListenerId()
 		//TODO room.sendMsg(msg)
 		pubsub.SendMessage(&msg)
 
@@ -165,7 +138,14 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 		name := info.Args()[0].String()
 		script := info.Args()[1].String()
 
-		newRoom := GetRoom(room.state, misc.RoomId(misc.UUIDString()), name, script)
+		roomInfo := RoomInfo{
+			RoomId:          misc.RoomId(misc.UUIDString()),
+			Name:            name,
+			AdminScript:     script,
+			DestroyOnOrphan: true,
+		}
+
+		newRoom := room.roomService.NewRoom(roomInfo)
 		objTemplate := newRoom.JSTemplate(isolate)
 
 		obj, err := objTemplate.NewInstance(info.Context())
@@ -211,7 +191,7 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 func (r *Room) JSTemplate(isolate *v8go.Isolate) *v8go.ObjectTemplate {
 	// Create a new java object that represents a room
 	objTemplate := v8go.NewObjectTemplate(isolate)
-	objTemplate.Set("Id", r.roomId)
+	objTemplate.Set("Id", r.info.RoomId)
 	objTemplate.Set("Room", r)
 
 	join := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
@@ -220,7 +200,7 @@ func (r *Room) JSTemplate(isolate *v8go.Isolate) *v8go.ObjectTemplate {
 		fmt.Println("Looked up ", id, " and found on ", mid)
 
 		// What EUS is that client on?
-		cmd := message.NewClientCmd(mid, id.ListenerId(), "ClientJoin", map[string]interface{}{"RoomId": r.roomId})
+		cmd := message.NewClientCmd(mid, id.ListenerId(), "ClientJoin", map[string]interface{}{"RoomId": r.info.RoomId})
 		fmt.Println("Create ", cmd)
 		pubsub.SendMessage(&cmd)
 

@@ -7,15 +7,14 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
-
-	"github.com/hoyle1974/chorus/misc"
-	"github.com/hoyle1974/chorus/store"
 )
 
 func main() {
 	handler := log.NewWithOptions(os.Stderr, log.Options{Level: log.DebugLevel})
 	logger := slog.New(handler)
 	state := NewGlobalState(logger)
+
+	rs := StartLocalRoomService(state)
 
 	go func() {
 		sigchan := make(chan os.Signal, 1)
@@ -26,12 +25,7 @@ func main() {
 	}()
 
 	// See if we should be the owner of a room
-	go func() {
-		WaitForOwnership(state, misc.GetGlobalLobbyId(), state.MachineId)
-
-		room := GetRoom(state, misc.GetGlobalLobbyId(), "Global Lobby", "matchmaker.js")
-		logger.Info("Global Lobby", "room", room)
-	}()
+	rs.BootstrapLobby()
 
 	logger.Info("RoomServer started.")
 	for {
@@ -40,6 +34,7 @@ func main() {
 
 }
 
+/*
 func WaitForOwnership(state GlobalServerState, roomId misc.RoomId, machineId misc.MachineId) {
 	// See if we can be the owner of this room, block until we can
 	ttl := time.Duration(10) * time.Second
@@ -62,3 +57,4 @@ func WaitForOwnership(state GlobalServerState, roomId misc.RoomId, machineId mis
 	// When this function returns we own the room
 	state.logger.Info("We are the owner", "room", roomId)
 }
+*/

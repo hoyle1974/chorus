@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -14,6 +15,7 @@ type Lease struct {
 }
 
 func NewLease(ttl time.Duration) *Lease {
+	fmt.Println("NewLease", ttl)
 	ctx, cancel := context.WithCancel(context.Background())
 	l := &Lease{
 		keys:   []string{},
@@ -25,9 +27,10 @@ func NewLease(ttl time.Duration) *Lease {
 		for {
 			select {
 			case <-ctx.Done():
-				// fmt.Println("Context cancelled")
+				fmt.Println("Context cancelled")
 				return
 			case <-time.After(ttl):
+				fmt.Println("Renew")
 				l.renew()
 			}
 		}
@@ -41,6 +44,7 @@ func (l *Lease) Destroy() {
 }
 
 func (l *Lease) AddKey(keys ...string) {
+	fmt.Println("Adding keys", keys)
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	l.keys = append(l.keys, keys...)
@@ -48,9 +52,11 @@ func (l *Lease) AddKey(keys ...string) {
 
 func (l *Lease) renew() {
 	conn := getConn()
+	ttl := l.TTL * 3 / 2
 	l.lock.RLock()
 	for _, key := range l.keys {
-		conn.Expire(context.Background(), key, l.TTL*3/2)
+		fmt.Println("Renew", key, ttl)
+		conn.Expire(context.Background(), key, ttl)
 	}
 	defer l.lock.RUnlock()
 }
