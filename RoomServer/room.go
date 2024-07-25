@@ -30,6 +30,7 @@ type Room struct {
 func (r *Room) Destroy() {
 	r.logger.Info("Deleting room")
 	store.Del(r.info.RoomId.RoomKey())
+	r.roomService.rooms.SRem(r.info.RoomId)
 }
 
 func (r *Room) OnMessageFromTopic(m pubsub.Message) {

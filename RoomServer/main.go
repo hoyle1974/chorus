@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/hoyle1974/chorus/misc"
 )
 
 func main() {
@@ -21,13 +22,17 @@ func main() {
 		signal.Notify(sigchan, os.Interrupt)
 		<-sigchan
 		// Do any cleanup
+		state.MachineLease.Destroy()
+
 		os.Exit(0)
 	}()
 
 	// See if we should be the owner of a room
-	rs.BootstrapLobby()
+	if !rs.isOwnerOnline(misc.GetGlobalLobbyId()) {
+		rs.BootstrapLobby()
+	}
 
-	logger.Info("RoomServer started.")
+	rs.gss.logger.Info("RoomServer started.")
 	for {
 		time.Sleep(time.Second)
 	}

@@ -2,7 +2,6 @@ package distributed
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/hoyle1974/chorus/store"
@@ -20,9 +19,7 @@ func NewDist(conn *redis.Client) Dist {
 }
 
 func (d Dist) commonOps(key string, op []any) time.Duration {
-	fmt.Println("commonOps", key, op)
 	ttl := time.Duration(0)
-	fmt.Println("	", len(op))
 	for _, i := range op {
 		switch v := i.(type) {
 		case *store.Lease:

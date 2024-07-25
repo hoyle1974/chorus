@@ -2,12 +2,10 @@ package pubsub
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"sync/atomic"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/hoyle1974/chorus/ds"
 	"github.com/hoyle1974/chorus/misc"
 	"github.com/redis/go-redis/v9"
@@ -24,7 +22,6 @@ type Message interface {
 }
 
 func SendMessage(msg Message) {
-	fmt.Println("pubsub.SendMessage to", msg.Topic(), ":", msg)
 	err := ds.GetConn().Publish(context.Background(), string(msg.Topic()), msg.String()).Err()
 	if err != nil {
 		panic(err)
@@ -40,7 +37,6 @@ type Consumer struct {
 }
 
 func NewConsumer(log *slog.Logger, topic misc.TopicId, msgHandler TopicMessageHandler) *Consumer {
-	log.Debug("pubsub.NewConsumer", "topic", topic)
 	pubsub := ds.GetConn().PSubscribe(context.Background(), string(topic))
 	consumer := &Consumer{log: log, topic: topic, msgHandler: msgHandler, pubsub: pubsub}
 	go func() {
@@ -55,12 +51,10 @@ func NewConsumer(log *slog.Logger, topic misc.TopicId, msgHandler TopicMessageHa
 }
 
 func (c *Consumer) AddTopic(topic misc.TopicId) {
-	log.Debug("pubsub.AddTopic", "topic", topic)
 	c.pubsub.Subscribe(context.Background(), string(topic))
 }
 
 func (c *Consumer) RemoveTopic(topic misc.TopicId) {
-	log.Debug("pubsub.RemoveTopic", "topic", topic)
 	c.pubsub.Unsubscribe(context.Background(), string(topic))
 }
 

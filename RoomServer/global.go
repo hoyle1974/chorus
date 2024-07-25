@@ -25,7 +25,6 @@ func NewGlobalState(logger *slog.Logger) GlobalServerState {
 		MachineLease: store.NewLease(time.Duration(10) * time.Second),
 		Dist:         distributed.NewDist(ds.GetConn()),
 	}
-
 	ss.Dist.Put(ss.MachineId.MachineKey(), "true", ss.MachineLease)
 
 	return ss

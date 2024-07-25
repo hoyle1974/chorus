@@ -14,7 +14,7 @@ func (d Dist) BindSet(key string, op ...any) Set {
 	return Set{key: key, dist: d}
 }
 
-func (l Set) SAdd(members ...interface{}) (int64, error) {
+func (l Set) SAdd(members ...string) (int64, error) {
 	return intCmdWrap(l.dist.conn.SAdd(context.Background(), l.key, members))
 }
 
