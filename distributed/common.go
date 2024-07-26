@@ -10,6 +10,9 @@ func stringSliceCmdWrap(r *redis.StringSliceCmd) ([]string, error) {
 func stringCmdWrap(r *redis.StringCmd) (string, error) {
 	return r.Val(), r.Err()
 }
+func intSliceCmdWrap(r *redis.IntSliceCmd) ([]int64, error) {
+	return r.Val(), r.Err()
+}
 func intCmdWrap(r *redis.IntCmd) (int64, error) {
 	return r.Val(), r.Err()
 }

@@ -8,7 +8,6 @@ import (
 	"github.com/hoyle1974/chorus/message"
 	"github.com/hoyle1974/chorus/misc"
 	"github.com/hoyle1974/chorus/pubsub"
-	"github.com/redis/go-redis/v9"
 )
 
 // Room list store all room info in Redis
@@ -49,13 +48,17 @@ func StartLocalRoomService(gss GlobalServerState) *RoomService {
 	rs := &RoomService{
 		gss:        gss,
 		localRooms: map[misc.RoomId]*Room{},
-		rooms:      gss.Dist.BindSet("rooms"),
+		rooms:      gss.dist.BindSet("rooms"),
 	}
 
 	rs.Start()
 
 	gss.logger.Info("Local Room Service is started.")
 	return rs
+}
+
+func (o *RoomService) StopLocalService() {
+	// TODO
 }
 
 func (rs *RoomService) Start() {
@@ -70,10 +73,17 @@ func (rs *RoomService) run() {
 		}
 		for _, roomId := range roomIds {
 			info := rs.getRoomInfo(misc.RoomId(roomId))
-			if !rs.isOwnerOnline(info.RoomId) {
-				rs.gss.logger.Warn("owner is not online:", info)
-				rs.waitForOwnership(info.RoomId)
-				rs.bindRoomToThisMachine(info)
+
+			if rs.gss.ownership.GetValidOwner(info.RoomId) == misc.NilMachineId {
+				rs.gss.logger.Warn("owner is not online:", "info", info)
+				if rs.gss.ownership.ClaimOwnership(info.RoomId, time.Duration(15)*time.Second) {
+					room := rs.bindRoomToThisMachine(info)
+					if info.DestroyOnOrphan {
+						room.Destroy()
+					}
+				} else {
+					rs.gss.logger.Warn("could not claim ownership", "info", info)
+				}
 			}
 		}
 
@@ -82,64 +92,72 @@ func (rs *RoomService) run() {
 }
 
 func (rs *RoomService) BootstrapLobby() {
-	go func() {
-		rs.waitForOwnership(misc.GetGlobalLobbyId())
-		info := RoomInfo{RoomId: misc.GetGlobalLobbyId(), AdminScript: "matchmaker.js", DestroyOnOrphan: false}
-		rs.bindRoomToThisMachine(info)
-	}()
+	if !rs.gss.ownership.ClaimOwnership(misc.GetGlobalLobbyId(), time.Duration(15)*time.Second) {
+		rs.gss.logger.Warn("Could not bootstrap lobby, someone else owns it")
+	}
+
+	info := RoomInfo{RoomId: misc.GetGlobalLobbyId(), AdminScript: "matchmaker.js", DestroyOnOrphan: false}
+	rs.bindRoomToThisMachine(info)
 }
 
 func (rs *RoomService) NewRoom(info RoomInfo) *Room {
-	rs.waitForOwnership(info.RoomId)
+	if !rs.gss.ownership.ClaimOwnership(info.RoomId, time.Duration(15)*time.Second) {
+		rs.gss.logger.Error("Could not claim room, someone else owns it", "info", info)
+		return nil
+	}
 	return rs.bindRoomToThisMachine(info)
 }
 
 func (rs *RoomService) getRoomInfo(roomId misc.RoomId) RoomInfo {
-	infoS, err := rs.gss.Dist.Get(roomId.RoomKey())
+	infoS, err := rs.gss.dist.Get(roomId.RoomKey())
 	if err != nil {
 		return RoomInfo{}
 	}
 	return NewRoomInfoFromString(infoS)
 }
 
+/*
 func (rs *RoomService) isOwnerOnline(roomId misc.RoomId) bool {
-	m, err := rs.gss.Dist.Get(roomId.OwnershipKey())
+	m, err := rs.gss.dist.Get(roomId.OwnershipKey())
 	if err == redis.Nil {
 		return false
 	}
 	machineId := misc.MachineId(m)
-	_, err = rs.gss.Dist.Get(machineId.MachineKey())
+	_, err = rs.gss.dist.Get(machineId.MachineKey())
 	if err == redis.Nil {
 		return false
 	}
 	return true
 }
+*/
 
+/*
 func (rs *RoomService) waitForOwnership(roomId misc.RoomId) {
-	rs.gss.logger.Debug("Waiting for owernship", roomId)
+	rs.gss.logger.Debug("Waiting for owernship", "roomId", roomId)
 	for {
-		b, _ := rs.gss.Dist.PutIfAbsent(roomId.OwnershipKey(), string(rs.gss.MachineId), rs.gss.MachineLease)
+		b, _ := rs.gss.dist.PutIfAbsent(roomId.OwnershipKey(), string(rs.gss.machineId), rs.gss.machineLease)
 		if b {
-			rs.gss.logger.Info("We are the owner", "room", roomId)
+			rs.gss.logger.Info("We are the owner", "roomId", roomId)
 			return
 		}
 		time.Sleep(time.Duration(1) * time.Second)
 	}
 }
+*/
 
 // We are the owner, but we need to bind a local struct to the
 // instance in redis
 func (rs *RoomService) bindRoomToThisMachine(info RoomInfo) *Room {
-	rs.gss.logger.Debug("Binding locally", info.RoomId)
+	rs.gss.logger.Debug("Binding locally", "roomId", info.RoomId)
 
-	rs.gss.Dist.Put(info.RoomId.RoomKey(), info.String())
+	rs.gss.dist.Put(info.RoomId.RoomKey(), info.String())
 
 	r := &Room{
 		state:       rs.gss,
 		roomService: rs,
 		info:        info,
 		logger:      rs.gss.logger.With("info", info),
-		members:     rs.gss.Dist.BindSet(info.RoomId.RoomMembershipKey()),
+		members:     rs.gss.dist.BindSet(info.RoomId.RoomMembershipKey()),
 	}
 	_, err := rs.rooms.SAdd(string(info.RoomId))
 	if err != nil {

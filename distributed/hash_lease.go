@@ -1,4 +1,4 @@
-package store
+package distributed
 
 import (
 	"context"
@@ -6,16 +6,18 @@ import (
 	"time"
 )
 
-type Lease struct {
+type HashLease struct {
 	lock   sync.RWMutex
+	hash   Hash
 	keys   []string
 	TTL    time.Duration
 	cancel context.CancelFunc
 }
 
-func NewLease(ttl time.Duration) *Lease {
+func (h Hash) NewHashLease(ttl time.Duration) *HashLease {
 	ctx, cancel := context.WithCancel(context.Background())
-	l := &Lease{
+	l := &HashLease{
+		hash:   h,
 		keys:   []string{},
 		TTL:    ttl,
 		cancel: cancel,
@@ -35,28 +37,27 @@ func NewLease(ttl time.Duration) *Lease {
 	return l
 }
 
-func (l *Lease) Destroy() {
+func (l *HashLease) Destroy() {
 	l.cancel()
 
-	conn := getConn()
 	l.lock.RLock()
-	conn.Del(context.Background(), l.keys...)
+	l.hash.HDel(l.keys...)
 	l.keys = []string{}
 	defer l.lock.RUnlock()
 }
 
-func (l *Lease) AddKey(keys ...string) {
+func (l *HashLease) AddKey(keys ...string) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	l.keys = append(l.keys, keys...)
 }
 
-func (l *Lease) renew() {
-	conn := getConn()
+func (l *HashLease) renew() {
 	ttl := l.TTL * 3 / 2
 	l.lock.RLock()
 	for _, key := range l.keys {
-		conn.Expire(context.Background(), key, ttl)
+		// TODO fix this
+		l.hash.HExpire(key, ttl)
 	}
 	defer l.lock.RUnlock()
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/hoyle1974/chorus/misc"
+	"github.com/hoyle1974/chorus/ownership"
 )
 
 func main() {
@@ -15,6 +16,7 @@ func main() {
 	logger := slog.New(handler)
 	state := NewGlobalState(logger)
 
+	state.ownership = ownership.StartLocalOwnershipService(state)
 	rs := StartLocalRoomService(state)
 
 	go func() {
@@ -22,13 +24,15 @@ func main() {
 		signal.Notify(sigchan, os.Interrupt)
 		<-sigchan
 		// Do any cleanup
-		state.MachineLease.Destroy()
+		state.machineLease.Destroy()
+		state.ownership.StopLocalService()
+		rs.StopLocalService()
 
 		os.Exit(0)
 	}()
 
 	// See if we should be the owner of a room
-	if !rs.isOwnerOnline(misc.GetGlobalLobbyId()) {
+	if state.ownership.GetValidOwner(misc.GetGlobalLobbyId()) == misc.NilMachineId {
 		rs.BootstrapLobby()
 	}
 
@@ -38,28 +42,3 @@ func main() {
 	}
 
 }
-
-/*
-func WaitForOwnership(state GlobalServerState, roomId misc.RoomId, machineId misc.MachineId) {
-	// See if we can be the owner of this room, block until we can
-	ttl := time.Duration(10) * time.Second
-
-	for {
-		ok, _ := store.PutIfAbsent(roomId.OwnershipKey(), string(machineId), ttl)
-		if ok {
-			break
-		}
-		time.Sleep(ttl)
-	}
-	// We are the owner, spawn a touch point
-	go func() {
-		for {
-			// Touch the record, then sleep for 80% of the ttl
-			store.Put(roomId.OwnershipKey(), string(machineId), ttl)
-			time.Sleep(ttl * 8 / 10)
-		}
-	}()
-	// When this function returns we own the room
-	state.logger.Info("We are the owner", "room", roomId)
-}
-*/

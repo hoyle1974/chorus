@@ -50,3 +50,15 @@ func (d Dist) Get(key string) (string, error) {
 func (d Dist) Expire(key string, ttl time.Duration) (bool, error) {
 	return boolCmdWrap(d.conn.Expire(context.Background(), key, ttl))
 }
+
+func (d Dist) Del(keys ...string) (int64, error) {
+	return intCmdWrap(d.conn.Del(context.Background(), keys...))
+}
+
+func (d Dist) Exists(key string) (bool, error) {
+	a, err := intCmdWrap(d.conn.Exists(context.Background(), key))
+	if err != nil {
+		return false, err
+	}
+	return a == 1, err
+}

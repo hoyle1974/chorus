@@ -1,5 +1,9 @@
 package misc
 
+var NilMachineId MachineId = MachineId("nil")
+var NilListenerId ListenerId = ListenerId("nil")
+var NilRoomId RoomId = RoomId("nil")
+
 type TopicId string
 
 type ConnectionId string
@@ -9,6 +13,10 @@ func (id ConnectionId) ListenerId() ListenerId {
 }
 
 type RoomId string
+
+func (id RoomId) String() string {
+	return string(id)
+}
 
 func (id RoomId) ListenerId() ListenerId {
 	return ListenerId(id)
