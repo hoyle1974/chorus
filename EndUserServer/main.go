@@ -7,6 +7,7 @@ import (
 	"os/signal"
 
 	"github.com/charmbracelet/log"
+	"github.com/hoyle1974/chorus/ownership"
 )
 
 func main() {
@@ -14,6 +15,8 @@ func main() {
 	logger := slog.New(handler)
 
 	state := NewGlobalState(logger)
+
+	ownership.StartLocalOwnershipService(state)
 
 	ln, err := net.Listen("tcp", ":8181") // Port can be changed here
 	if err != nil {

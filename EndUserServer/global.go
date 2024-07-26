@@ -15,23 +15,27 @@ import (
 
 type GlobalServerState struct {
 	logger         *slog.Logger
-	MachineId      misc.MachineId
-	MachineLease   *store.Lease
-	ClientCmdTopic *pubsub.Consumer
-	Dist           distributed.Dist
+	machineId      misc.MachineId
+	machineLease   *store.Lease
+	clientCmdTopic *pubsub.Consumer
+	dist           distributed.Dist
 }
+
+func (s GlobalServerState) Logger() *slog.Logger      { return s.logger }
+func (s GlobalServerState) MachineId() misc.MachineId { return s.machineId }
+func (s GlobalServerState) Dist() distributed.Dist    { return s.dist }
 
 func NewGlobalState(logger *slog.Logger) GlobalServerState {
 	ss := GlobalServerState{
 		logger:       logger,
-		MachineId:    machine.NewMachineId("EUS"),
-		MachineLease: store.NewLease(time.Duration(10) * time.Second),
-		Dist:         distributed.NewDist(ds.GetConn()),
+		machineId:    machine.NewMachineId("EUS"),
+		machineLease: store.NewLease(time.Duration(10) * time.Second),
+		dist:         distributed.NewDist(ds.GetConn()),
 	}
-	ss.Dist.Put(ss.MachineId.MachineKey(), "true", ss.MachineLease)
+	ss.dist.Put(ss.MachineId().MachineKey(), "true", ss.machineLease)
 
-	ss.ClientCmdTopic = pubsub.NewConsumer(logger, ss.MachineId.ClientCmdTopic(), ss)
-	ss.ClientCmdTopic.StartConsumer(&message.ClientCmd{})
+	ss.clientCmdTopic = pubsub.NewConsumer(logger, ss.machineId.ClientCmdTopic(), ss)
+	ss.clientCmdTopic.StartConsumer(&message.ClientCmd{})
 
 	return ss
 }

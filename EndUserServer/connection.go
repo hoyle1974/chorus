@@ -51,7 +51,7 @@ func NewConnection(state GlobalServerState, conn net.Conn) *ClientConnection {
 	}
 	c.logger = state.logger.With("connectionId", c.id)
 
-	store.PutConnectionInfo(state.MachineId, c.id)
+	store.PutConnectionInfo(state.machineId, c.id)
 
 	connectionLock.Lock()
 	connections[c.id] = &c
@@ -70,7 +70,7 @@ func findClientConnection(id misc.ConnectionId) *ClientConnection {
 
 func (c *ClientConnection) Close() {
 	//room.LeaveAllRooms(misc.ListenerId(c.id))
-	store.RemoveConnectionInfo(c.state.MachineId, c.id)
+	store.RemoveConnectionInfo(c.state.machineId, c.id)
 
 	if c.conn != nil {
 		c.conn.Close()

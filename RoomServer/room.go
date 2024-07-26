@@ -31,7 +31,6 @@ func (r *Room) Destroy() {
 	r.logger.Info("Deleting room")
 	r.state.dist.Del(r.info.RoomId.RoomKey())
 	r.roomService.rooms.SRem(r.info.RoomId)
-	r.state.dist.Del(r.info.RoomId.OwnershipKey())
 }
 
 func (r *Room) OnMessageFromTopic(m pubsub.Message) {

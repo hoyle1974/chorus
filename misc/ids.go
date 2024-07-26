@@ -8,6 +8,10 @@ type TopicId string
 
 type ConnectionId string
 
+func (id ConnectionId) String() string {
+	return string(id)
+}
+
 func (id ConnectionId) ListenerId() ListenerId {
 	return ListenerId(id)
 }
@@ -29,9 +33,6 @@ func (id RoomId) RoomKey() string {
 }
 func (id RoomId) RoomMembershipKey() string {
 	return "rooms/" + string(id) + "/membership"
-}
-func (id RoomId) OwnershipKey() string {
-	return string("ownership/rooms/" + id)
 }
 
 type ListenerId string
