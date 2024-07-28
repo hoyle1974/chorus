@@ -52,6 +52,10 @@ type ResourceId interface {
 	String() string
 }
 
+func (o *OwnershipService) ReleaseOwnership(resourceId ResourceId) {
+	o.ownership.HDel(resourceId.String())
+}
+
 func (o *OwnershipService) ClaimOwnership(resourceId ResourceId, wait time.Duration) bool {
 	start := time.Now()
 	for {

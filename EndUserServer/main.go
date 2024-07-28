@@ -16,7 +16,7 @@ func main() {
 
 	state := NewGlobalState(logger)
 
-	ownership.StartLocalOwnershipService(state)
+	state.ownership = ownership.StartLocalOwnershipService(state)
 
 	ln, err := net.Listen("tcp", ":8181") // Port can be changed here
 	if err != nil {

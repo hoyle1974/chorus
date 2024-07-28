@@ -9,6 +9,7 @@ import (
 	"github.com/hoyle1974/chorus/machine"
 	"github.com/hoyle1974/chorus/message"
 	"github.com/hoyle1974/chorus/misc"
+	"github.com/hoyle1974/chorus/ownership"
 	"github.com/hoyle1974/chorus/pubsub"
 	"github.com/hoyle1974/chorus/store"
 )
@@ -19,6 +20,7 @@ type GlobalServerState struct {
 	machineLease   *store.Lease
 	clientCmdTopic *pubsub.Consumer
 	dist           distributed.Dist
+	ownership      *ownership.OwnershipService
 }
 
 func (s GlobalServerState) Logger() *slog.Logger      { return s.logger }

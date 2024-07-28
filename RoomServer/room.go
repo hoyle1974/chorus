@@ -8,6 +8,7 @@ import (
 	"github.com/hoyle1974/chorus/distributed"
 	"github.com/hoyle1974/chorus/message"
 	"github.com/hoyle1974/chorus/misc"
+	"github.com/hoyle1974/chorus/ownership"
 	"github.com/hoyle1974/chorus/pubsub"
 	"github.com/hoyle1974/chorus/store"
 	"rogchap.com/v8go"
@@ -20,6 +21,7 @@ import (
 type Room struct {
 	state       GlobalServerState
 	roomService *RoomService
+	ownership   *ownership.OwnershipService
 	logger      *slog.Logger
 	info        RoomInfo
 	members     distributed.Set
@@ -79,7 +81,7 @@ func (r *Room) callJSOnMessage(msg *message.Message) error {
 	return nil
 }
 
-func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8go.Context, error) {
+func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string, own *ownership.OwnershipService) (*v8go.Context, error) {
 	// Create a new Isolate for sandboxed execution
 	isolate := v8go.NewIsolate()
 
@@ -147,7 +149,7 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 		}
 
 		newRoom := room.roomService.NewRoom(roomInfo)
-		objTemplate := newRoom.JSTemplate(isolate)
+		objTemplate := newRoom.JSTemplate(isolate, own)
 
 		obj, err := objTemplate.NewInstance(info.Context())
 		if err != nil {
@@ -164,7 +166,7 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 
 	thisRoom := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
 		// create global thisRoom in JS context
-		objTemplate := room.JSTemplate(isolate)
+		objTemplate := room.JSTemplate(isolate, own)
 		obj, err := objTemplate.NewInstance(room.ctx)
 		if err != nil {
 			room.logger.Error(fmt.Sprintf("js objTemplate NewInstance: %w", err))
@@ -189,7 +191,7 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 	return ctx, nil
 }
 
-func (r *Room) JSTemplate(isolate *v8go.Isolate) *v8go.ObjectTemplate {
+func (r *Room) JSTemplate(isolate *v8go.Isolate, own *ownership.OwnershipService) *v8go.ObjectTemplate {
 	// Create a new java object that represents a room
 	objTemplate := v8go.NewObjectTemplate(isolate)
 	objTemplate.Set("Id", r.info.RoomId)
@@ -197,7 +199,8 @@ func (r *Room) JSTemplate(isolate *v8go.Isolate) *v8go.ObjectTemplate {
 
 	join := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
 		id := misc.ConnectionId(info.Args()[0].String())
-		mid := store.GetConnectionInfo(id)
+		mid := own.GetOwner(id)
+
 		fmt.Println("Looked up ", id, " and found on ", mid)
 
 		// What EUS is that client on?

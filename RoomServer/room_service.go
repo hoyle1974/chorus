@@ -164,7 +164,7 @@ func (rs *RoomService) bindRoomToThisMachine(info RoomInfo) *Room {
 		panic(err)
 	}
 
-	ctx, err := createScriptEnvironmentForRoom(r, info.AdminScript)
+	ctx, err := createScriptEnvironmentForRoom(r, info.AdminScript, rs.gss.ownership)
 	if err != nil {
 		rs.gss.logger.Error("createScriptEnvironmentForRoom", "error", err)
 		return nil

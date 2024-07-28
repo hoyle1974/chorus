@@ -7,11 +7,11 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/hoyle1974/chorus/message"
 	"github.com/hoyle1974/chorus/misc"
 	"github.com/hoyle1974/chorus/pubsub"
-	"github.com/hoyle1974/chorus/store"
 )
 
 type ClientConnection struct {
@@ -51,7 +51,10 @@ func NewConnection(state GlobalServerState, conn net.Conn) *ClientConnection {
 	}
 	c.logger = state.logger.With("connectionId", c.id)
 
-	store.PutConnectionInfo(state.machineId, c.id)
+	if !state.ownership.ClaimOwnership(c.id, time.Duration(30)) {
+		c.logger.Error("This machinei could not claim ownership", "id", c.id)
+		return nil
+	}
 
 	connectionLock.Lock()
 	connections[c.id] = &c
@@ -69,8 +72,8 @@ func findClientConnection(id misc.ConnectionId) *ClientConnection {
 }
 
 func (c *ClientConnection) Close() {
-	//room.LeaveAllRooms(misc.ListenerId(c.id))
-	store.RemoveConnectionInfo(c.state.machineId, c.id)
+	//TODO room.LeaveAllRooms(misc.ListenerId(c.id))
+	c.state.ownership.ReleaseOwnership(c.id)
 
 	if c.conn != nil {
 		c.conn.Close()
