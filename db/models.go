@@ -28,6 +28,8 @@ type Room struct {
 	Name            string
 	Script          string
 	DestroyOnOrphan bool
+	CreatedAt       pgtype.Timestamptz
+	LastUpdated     pgtype.Timestamptz
 }
 
 type RoomDatum struct {

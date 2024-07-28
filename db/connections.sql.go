@@ -7,6 +7,8 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createConnection = `-- name: CreateConnection :exec
@@ -69,6 +71,36 @@ SELECT uuid, machine_uuid, created_at, last_updated FROM connections
 
 func (q *Queries) GetConnections(ctx context.Context) ([]Connection, error) {
 	rows, err := q.db.Query(ctx, getConnections)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Connection
+	for rows.Next() {
+		var i Connection
+		if err := rows.Scan(
+			&i.Uuid,
+			&i.MachineUuid,
+			&i.CreatedAt,
+			&i.LastUpdated,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getExpiredConnections = `-- name: GetExpiredConnections :many
+SELECT uuid, machine_uuid, created_at, last_updated FROM connections
+WHERE last_updated < NOW() - INTERVAL $1
+`
+
+func (q *Queries) GetExpiredConnections(ctx context.Context, dollar_1 pgtype.Interval) ([]Connection, error) {
+	rows, err := q.db.Query(ctx, getExpiredConnections, dollar_1)
 	if err != nil {
 		return nil, err
 	}

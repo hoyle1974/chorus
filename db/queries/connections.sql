@@ -23,3 +23,7 @@ WHERE uuid = $1;
 -- name: FindMachine :one
 SELECT * FROM connections
 WHERE uuid = $1;
+
+-- name: GetExpiredConnections :many
+SELECT * FROM connections
+WHERE last_updated < NOW() - INTERVAL $1;

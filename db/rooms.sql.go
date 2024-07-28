@@ -72,7 +72,7 @@ func (q *Queries) DeleteRoom(ctx context.Context, uuid string) error {
 
 const getRooms = `-- name: GetRooms :many
 
-SELECT uuid, machine_uuid, name, script, destroy_on_orphan FROM rooms
+SELECT uuid, machine_uuid, name, script, destroy_on_orphan, created_at, last_updated FROM rooms
 `
 
 // CREATE TABLE rooms (
@@ -99,6 +99,8 @@ func (q *Queries) GetRooms(ctx context.Context) ([]Room, error) {
 			&i.Name,
 			&i.Script,
 			&i.DestroyOnOrphan,
+			&i.CreatedAt,
+			&i.LastUpdated,
 		); err != nil {
 			return nil, err
 		}

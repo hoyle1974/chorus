@@ -7,6 +7,8 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createMachine = `-- name: CreateMachine :exec
@@ -30,6 +32,36 @@ WHERE uuid = $1
 func (q *Queries) DeleteMachine(ctx context.Context, uuid string) error {
 	_, err := q.db.Exec(ctx, deleteMachine, uuid)
 	return err
+}
+
+const getExpiredMachines = `-- name: GetExpiredMachines :many
+SELECT uuid, monitor, created_at, last_updated FROM machines
+WHERE last_updated < NOW() - INTERVAL $1
+`
+
+func (q *Queries) GetExpiredMachines(ctx context.Context, dollar_1 pgtype.Interval) ([]Machine, error) {
+	rows, err := q.db.Query(ctx, getExpiredMachines, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Machine
+	for rows.Next() {
+		var i Machine
+		if err := rows.Scan(
+			&i.Uuid,
+			&i.Monitor,
+			&i.CreatedAt,
+			&i.LastUpdated,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getMachines = `-- name: GetMachines :many

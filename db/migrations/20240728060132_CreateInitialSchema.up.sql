@@ -38,7 +38,9 @@ CREATE TABLE rooms (
     machine_uuid TEXT NOT NULL REFERENCES machines(uuid),
     name TEXT NOT NULL,
     script TEXT NOT NULL,
-    destroy_on_orphan BOOLEAN NOT NULL
+    destroy_on_orphan BOOLEAN NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_updated TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE room_data (

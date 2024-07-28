@@ -21,3 +21,7 @@ WHERE uuid = $1;
 UPDATE machines
 SET last_updated = NOW()
 WHERE uuid = $1;
+
+-- name: GetExpiredMachines :many
+SELECT * FROM machines
+WHERE last_updated < NOW() - INTERVAL $1;
