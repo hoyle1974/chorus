@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/hoyle1974/chorus/db"
 	"github.com/hoyle1974/chorus/misc"
 )
 
@@ -30,6 +31,27 @@ func (c QueriesX) GetMonitor() misc.MachineId {
 		return misc.NilMachineId
 	}
 	return misc.MachineId(s)
+}
+
+type Machine struct {
+	Uuid        misc.MachineId
+	Monitor     bool
+	CreatedAt   time.Time
+	LastUpdated time.Time
+}
+
+func toMAchine(in db.Machine) Machine {
+	return Machine{
+		Uuid:        misc.MachineId(in.Uuid),
+		Monitor:     in.Monitor,
+		CreatedAt:   in.CreatedAt.Time,
+		LastUpdated: in.LastUpdated.Time,
+	}
+}
+
+func (c QueriesX) GetMachine(machineId misc.MachineId) (Machine, error) {
+	s, err := c.q.GetMachine(context.Background(), string(machineId))
+	return toMAchine(s), err
 }
 
 func (c QueriesX) SetMachineAsMonitor(machineId misc.MachineId) error {

@@ -47,17 +47,17 @@ func StartMonitorService(ctx MonitorContext) (MonitorService, error) {
 	defer tx.Rollback(context.Background())
 
 	// Create ourselves as a machine in the table
-	q := db.New(dbx.GetConn()).WithTx(tx)
-	err = ms.dbx.Queries(q).CreateMachine(ctx.MachineId())
+	q := dbx.Dbx().Queries(db.New(dbx.GetConn()).WithTx(tx))
+	err = q.CreateMachine(ctx.MachineId())
 	if err != nil {
 		return ms, err
 	}
 	go ms.keepAliveTick()
 
-	monitorMachineId := ms.dbx.Queries(q).GetMonitor()
+	monitorMachineId := q.GetMonitor()
 	if monitorMachineId == misc.NilMachineId {
 		// Let's become the monitor
-		err := ms.dbx.Queries(q).SetMachineAsMonitor(ctx.MachineId())
+		err := q.SetMachineAsMonitor(ctx.MachineId())
 		if err != nil {
 			// Nope we are not the monitor
 			go ms.waitForMonitor()
@@ -93,10 +93,10 @@ func (ms MonitorService) keepAliveTick() {
 	}
 }
 
-func (ms MonitorService) becomeMonitor(q *db.Queries) error {
+func (ms MonitorService) becomeMonitor(q dbx.QueriesX) error {
 	ms.logger.Debug("becomeMonitor")
 
-	err := ms.dbx.Queries(q).SetMachineAsMonitor(ms.machineId)
+	err := q.SetMachineAsMonitor(ms.machineId)
 	if err == nil {
 		ms.logger.Info("We are the monitor")
 		ms.logger = ms.logger.With("monitor", true)
@@ -176,18 +176,20 @@ func (ms MonitorService) waitForMonitor() {
 			if err != nil {
 				ms.logger.Error("Could not get connection", "error", err)
 			}
-			q := db.New(dbx.GetConn())
+			conn := dbx.GetConn()
+			dbq := db.New(conn)
+			q := dbx.Dbx().Queries(dbq)
 
 			// Timeout occured, the monitor is no longer valid, let's become the monitor
-			machineId, err := q.GetMonitor(context.Background())
-			if err == nil {
-				machine, err := q.GetMachine(context.Background(), machineId)
+			machineId := q.GetMonitor()
+			if machineId != misc.NilMachineId {
+				machine, err := q.GetMachine(machineId)
 				if err == nil {
 					// Monitor machine has timed out
-					if time.Now().Sub(machine.LastUpdated.Time).Seconds() > 5 {
+					if time.Now().Sub(machine.LastUpdated).Seconds() > 5 {
 						ms.logger.Warn("Monitor deadline exceeded, let's try to become the monitor now")
 
-						err = q.DeleteMachine(context.Background(), machineId)
+						err = q.DeleteMachine(machineId)
 						if err == nil {
 							err = ms.becomeMonitor(q)
 							if err == nil {
