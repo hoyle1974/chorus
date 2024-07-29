@@ -18,8 +18,8 @@ type Connection struct {
 type Machine struct {
 	Uuid        string
 	Monitor     bool
-	CreatedAt   pgtype.Timestamptz
-	LastUpdated pgtype.Timestamptz
+	CreatedAt   pgtype.Timestamp
+	LastUpdated pgtype.Timestamp
 }
 
 type Room struct {
@@ -28,8 +28,8 @@ type Room struct {
 	Name            string
 	Script          string
 	DestroyOnOrphan bool
-	CreatedAt       pgtype.Timestamptz
-	LastUpdated     pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamp
+	LastUpdated     pgtype.Timestamp
 }
 
 type RoomDatum struct {

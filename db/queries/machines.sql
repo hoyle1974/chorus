@@ -22,13 +22,16 @@ UPDATE machines
 SET last_updated = NOW()
 WHERE uuid = $1;
 
-
 -- name: GetMonitor :one
 SELECT uuid FROM machines
 WHERE monitor = true;
 
--- name: GetExpiredMachines :many
-SELECT uuid FROM machines
-WHERE last_updated < NOW() - INTERVAL $1 second;
+-- name: TouchMachine :exec
+UPDATE machines 
+SET last_updated = now()
+WHERE uuid = $1;
 
+-- name: GetMachine :one
+SELECT * FROM machines 
+WHERE uuid=$1;
 

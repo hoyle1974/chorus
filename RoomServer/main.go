@@ -14,7 +14,21 @@ func main() {
 	logger := slog.New(handler)
 	state := NewGlobalState(logger)
 
-	monitor.StartMonitorService(state)
+	_, err := monitor.StartMonitorService(state)
+	if err != nil {
+		panic(err)
+	}
+
+	// conn, err := dbx.NewConn()
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// q := db.New(conn)
+	// m, err := q.GetMachines(context.Background())
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// fmt.Println(m)
 
 	/*
 		state.ownership = ownership.StartLocalOwnershipService(state)

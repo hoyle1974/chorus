@@ -3,15 +3,12 @@ package monitor
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
-	"os"
 	"time"
 
 	"github.com/hoyle1974/chorus/db"
 	"github.com/hoyle1974/chorus/dbx"
 	"github.com/hoyle1974/chorus/misc"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 /*
@@ -29,20 +26,23 @@ type MonitorContext interface {
 }
 
 type MonitorService struct {
-	ctx MonitorContext
-	dbx dbx.DBX
+	dbx       dbx.DBX
+	machineId misc.MachineId
+	logger    *slog.Logger
 }
 
-func StartMonitorService(ctx MonitorContext) MonitorService {
+func StartMonitorService(ctx MonitorContext) (MonitorService, error) {
 	ms := MonitorService{
-		ctx: ctx,
-		dbx: dbx.Dbx(),
+		logger:    ctx.Logger().With("machineId", ctx.MachineId()),
+		machineId: ctx.MachineId(),
+		dbx:       dbx.Dbx(),
 	}
+	defer ms.logger.Info("Monitor Service Started . . .")
 
 	// Start transaction
 	tx, err := dbx.GetConn().Begin(context.Background())
 	if err != nil {
-		panic(err)
+		return ms, err
 	}
 	defer tx.Rollback(context.Background())
 
@@ -50,8 +50,9 @@ func StartMonitorService(ctx MonitorContext) MonitorService {
 	q := db.New(dbx.GetConn()).WithTx(tx)
 	err = ms.dbx.Queries(q).CreateMachine(ctx.MachineId())
 	if err != nil {
-		panic(err)
+		return ms, err
 	}
+	go ms.keepAliveTick()
 
 	monitorMachineId := ms.dbx.Queries(q).GetMonitor()
 	if monitorMachineId == misc.NilMachineId {
@@ -60,74 +61,100 @@ func StartMonitorService(ctx MonitorContext) MonitorService {
 		if err != nil {
 			// Nope we are not the monitor
 			go ms.waitForMonitor()
-			return ms
+			return ms, nil
 		}
 		// We are the monitor
 		ms.becomeMonitor(q)
 	}
-	tx.Commit(context.Background())
+	err = tx.Commit(context.Background())
+	if err != nil {
+		return ms, err
+	}
 
 	go ms.waitForMonitor()
-	return ms
+	return ms, nil
+}
+
+func (ms MonitorService) keepAliveTick() {
+	ms.logger.Debug("keepAliveTick")
+	conn, err := dbx.NewConn()
+	if err != nil {
+		panic(err)
+	}
+	defer conn.Close(context.Background())
+	q := db.New(conn)
+
+	for {
+		err := ms.dbx.Queries(q).TouchMachine(ms.machineId)
+		if err != nil {
+			ms.logger.Error("Could not touch our record in the database", "error", err)
+		}
+		time.Sleep(time.Second * time.Duration(1))
+	}
 }
 
 func (ms MonitorService) becomeMonitor(q *db.Queries) error {
-	err := ms.dbx.Queries(q).SetMachineAsMonitor(ms.ctx.MachineId())
-	if err == nil {
-		fmt.Printf("We are the monitor: [%v]\n", ms.ctx.MachineId())
+	ms.logger.Debug("becomeMonitor")
 
+	err := ms.dbx.Queries(q).SetMachineAsMonitor(ms.machineId)
+	if err == nil {
+		ms.logger.Info("We are the monitor")
+		ms.logger = ms.logger.With("monitor", true)
 		go ms.monitor()
 	} else {
-		fmt.Printf("Not able to become monitor at the moment.")
+		ms.logger.Error("Not able to become monitor at the moment.")
 	}
 
 	return err
 }
 
 func (ms MonitorService) monitor() {
+	ms.logger.Debug("monitor")
+
+	ttl := time.Duration(5) * time.Second
+
 	for {
-		fmt.Println("monitor tick")
 		ctx, _ := context.WithTimeout(context.Background(), time.Duration(5)*time.Second)
 		time.Sleep(time.Duration(1) * time.Second)
 		conn, err := dbx.NewConn()
 		if err == nil {
-			fmt.Println("expired machines?")
 			q := db.New(conn)
-			uuids, err := q.GetExpiredMachines(ctx, pgtype.Interval{
-				Microseconds: (time.Duration(3) * time.Second).Microseconds(),
-				Days:         0,
-				Months:       0,
-				Valid:        true,
-			})
-			if err != nil {
-				for _, uuid := range uuids {
-					fmt.Println("Delete machine", uuid)
-					q.DeleteMachine(ctx, uuid)
+			ctx, _ = context.WithTimeout(context.Background(), time.Duration(5)*time.Second)
+			machines, err := q.GetMachines(ctx)
+			now := time.Now()
+			if err == nil {
+				for _, machine := range machines {
+					if now.Sub(machine.LastUpdated.Time).Seconds() > 5 {
+						ms.logger.Debug("Delete machine", "machineToDelete", machine.Uuid)
+						ctx, _ = context.WithTimeout(context.Background(), ttl)
+						q.DeleteMachine(ctx, machine.Uuid)
+					}
 				}
 			} else {
-				fmt.Println(err)
+				ms.logger.Error("Trouble getting a list of all machines", "error", err)
 			}
 
-			fmt.Println("expired connections?")
-			uuids, err = q.GetExpiredConnections(ctx, pgtype.Interval{
-				Microseconds: (time.Duration(3) * time.Second).Microseconds(),
-				Days:         0,
-				Months:       0,
-				Valid:        true,
-			})
-			if err != nil {
-				for _, uuid := range uuids {
-					fmt.Println("Delete Connection", uuid)
-					q.DeleteConnection(ctx, uuid)
+			ctx, _ = context.WithTimeout(context.Background(), time.Duration(5)*time.Second)
+			connections, err := q.GetConnections(ctx)
+			if err == nil {
+				for _, connection := range connections {
+					if now.Sub(connection.LastUpdated.Time).Seconds() > 5 {
+						ms.logger.Debug("Delete connection", "connectionToDelete", connection.Uuid)
+						ctx, _ = context.WithTimeout(context.Background(), ttl)
+						q.DeleteConnection(ctx, connection.Uuid)
+					}
 				}
 			} else {
-				fmt.Println(err)
+				ms.logger.Error("Trouble getting a list of all connections", "err", err)
 			}
 		}
 	}
 }
 
+// We are not the monitor, but wait to see if we can become a monitor
 func (ms MonitorService) waitForMonitor() {
+	ms.logger.Debug("waitForMonitor")
+
 	conn, err := dbx.NewConn()
 	if err != nil {
 		panic(err)
@@ -139,50 +166,49 @@ func (ms MonitorService) waitForMonitor() {
 		panic(err)
 	}
 
-	fmt.Println("-- Start to listen")
 	for {
-		fmt.Println("Wait for notification")
 		ctx, _ := context.WithTimeout(context.Background(), time.Duration(5)*time.Second)
-		notification, err := conn.WaitForNotification(ctx)
-		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				fmt.Println("Monitor deadline exceeded, let's try to become the monitor now")
+		_, err := conn.WaitForNotification(ctx)
+		if err == nil || errors.Is(err, context.DeadlineExceeded) {
 
-				// Start transaction
-				tx, err := dbx.GetConn().Begin(context.Background())
-				if err != nil {
-					panic(err)
-				}
-				q := db.New(dbx.GetConn())
+			// Start transaction
+			tx, err := dbx.GetConn().Begin(context.Background())
+			if err != nil {
+				ms.logger.Error("Could not get connection", "error", err)
+			}
+			q := db.New(dbx.GetConn())
 
-				// Timeout occured, the monitor is no longer valid, let's become the monitor
-				machineId, err := q.GetMonitor(context.Background())
+			// Timeout occured, the monitor is no longer valid, let's become the monitor
+			machineId, err := q.GetMonitor(context.Background())
+			if err == nil {
+				machine, err := q.GetMachine(context.Background(), machineId)
 				if err == nil {
-					err = q.DeleteMachine(context.Background(), machineId)
-					if err == nil {
-						err = ms.becomeMonitor(q)
+					// Monitor machine has timed out
+					if time.Now().Sub(machine.LastUpdated.Time).Seconds() > 5 {
+						ms.logger.Warn("Monitor deadline exceeded, let's try to become the monitor now")
+
+						err = q.DeleteMachine(context.Background(), machineId)
 						if err == nil {
-							// We are the monitor, no more waiting
-							tx.Commit(context.Background())
-							return
+							err = ms.becomeMonitor(q)
+							if err == nil {
+								// We are the monitor, no more waiting
+								tx.Commit(context.Background())
+								return
+							} else {
+								ms.logger.Error("could not become the monitor", "error", err)
+							}
 						} else {
-							fmt.Println(err)
+							ms.logger.Error("could not delete expired monitor", "error", err)
 						}
-					} else {
-						fmt.Println(err)
 					}
-				} else {
-					fmt.Println(err)
 				}
-				tx.Rollback(context.Background())
 			} else {
-				fmt.Fprintln(os.Stderr, "Error waiting for notification:", err)
-				os.Exit(1)
+				ms.logger.Error("could not get a monitor", "error", err)
 			}
+			tx.Rollback(context.Background())
 		} else {
-			if notification.Channel == "machines" && notification.Payload == "monitor data updated" {
-				// See if we need to become the monitor?
-			}
+			ms.logger.Error("Error waiting for notification", "error", err)
+			panic(err)
 		}
 	}
 

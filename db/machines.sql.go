@@ -7,8 +7,6 @@ package db
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createMachine = `-- name: CreateMachine :exec
@@ -34,29 +32,21 @@ func (q *Queries) DeleteMachine(ctx context.Context, uuid string) error {
 	return err
 }
 
-const getExpiredMachines = `-- name: GetExpiredMachines :many
-SELECT uuid FROM machines
-WHERE last_updated < NOW() - INTERVAL $1 second
+const getMachine = `-- name: GetMachine :one
+SELECT uuid, monitor, created_at, last_updated FROM machines 
+WHERE uuid=$1
 `
 
-func (q *Queries) GetExpiredMachines(ctx context.Context, dollar_1 pgtype.Interval) ([]string, error) {
-	rows, err := q.db.Query(ctx, getExpiredMachines, dollar_1)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var uuid string
-		if err := rows.Scan(&uuid); err != nil {
-			return nil, err
-		}
-		items = append(items, uuid)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+func (q *Queries) GetMachine(ctx context.Context, uuid string) (Machine, error) {
+	row := q.db.QueryRow(ctx, getMachine, uuid)
+	var i Machine
+	err := row.Scan(
+		&i.Uuid,
+		&i.Monitor,
+		&i.CreatedAt,
+		&i.LastUpdated,
+	)
+	return i, err
 }
 
 const getMachines = `-- name: GetMachines :many
@@ -108,6 +98,17 @@ WHERE uuid = $1
 
 func (q *Queries) SetMachineAsMonitor(ctx context.Context, uuid string) error {
 	_, err := q.db.Exec(ctx, setMachineAsMonitor, uuid)
+	return err
+}
+
+const touchMachine = `-- name: TouchMachine :exec
+UPDATE machines 
+SET last_updated = now()
+WHERE uuid = $1
+`
+
+func (q *Queries) TouchMachine(ctx context.Context, uuid string) error {
+	_, err := q.db.Exec(ctx, touchMachine, uuid)
 	return err
 }
 
