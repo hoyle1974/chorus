@@ -1,5 +1,5 @@
 queries:
-	rm db/*.go
+	@rm db/*.go
 	sqlc generate
 	
 
@@ -16,4 +16,7 @@ schema:
 
 db-all: reset-postgres pause schema queries
 	@echo done.
+
+cli:
+	PGPASSWORD=postgres psql -h localhost -p 5432 -U postgres
 

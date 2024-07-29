@@ -7,12 +7,12 @@ import (
 	"github.com/hoyle1974/chorus/misc"
 )
 
-func GetRooms() {
-	q().GetRooms(context.Background())
+func (r QueriesX) GetRooms() {
+	r.q.GetRooms(context.Background())
 }
 
-func CreateRoom(roomId misc.RoomId, machineId misc.MachineId, name string, script string, destroyOnOrphan bool) {
-	q().CreateRoom(context.Background(), db.CreateRoomParams{
+func (r QueriesX) CreateRoom(roomId misc.RoomId, machineId misc.MachineId, name string, script string, destroyOnOrphan bool) {
+	r.q.CreateRoom(context.Background(), db.CreateRoomParams{
 		Uuid:            string(roomId),
 		MachineUuid:     string(machineId),
 		Name:            name,
@@ -21,19 +21,19 @@ func CreateRoom(roomId misc.RoomId, machineId misc.MachineId, name string, scrip
 	})
 }
 
-func DeleteRoom(roomId misc.RoomId) {
-	q().DeleteRoom(context.Background(), string(roomId))
+func (r QueriesX) DeleteRoom(roomId misc.RoomId) {
+	r.q.DeleteRoom(context.Background(), string(roomId))
 }
 
-func AddRoomMember(roomId misc.RoomId, connectionId misc.ConnectionId) {
-	q().AddRoomMember(context.Background(), db.AddRoomMemberParams{
+func (r QueriesX) AddRoomMember(roomId misc.RoomId, connectionId misc.ConnectionId) {
+	r.q.AddRoomMember(context.Background(), db.AddRoomMemberParams{
 		RoomUuid:       string(roomId),
 		ConnectionUuid: string(connectionId),
 	})
 }
 
-func RemoveRoomMember(roomId misc.RoomId, connectionId misc.ConnectionId) {
-	q().RemoveRoomMember(context.Background(), db.RemoveRoomMemberParams{
+func (r QueriesX) RemoveRoomMember(roomId misc.RoomId, connectionId misc.ConnectionId) {
+	r.q.RemoveRoomMember(context.Background(), db.RemoveRoomMemberParams{
 		RoomUuid:       string(roomId),
 		ConnectionUuid: string(connectionId),
 	})

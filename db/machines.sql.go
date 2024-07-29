@@ -35,28 +35,23 @@ func (q *Queries) DeleteMachine(ctx context.Context, uuid string) error {
 }
 
 const getExpiredMachines = `-- name: GetExpiredMachines :many
-SELECT uuid, monitor, created_at, last_updated FROM machines
-WHERE last_updated < NOW() - INTERVAL $1
+SELECT uuid FROM machines
+WHERE last_updated < NOW() - INTERVAL $1 second
 `
 
-func (q *Queries) GetExpiredMachines(ctx context.Context, dollar_1 pgtype.Interval) ([]Machine, error) {
+func (q *Queries) GetExpiredMachines(ctx context.Context, dollar_1 pgtype.Interval) ([]string, error) {
 	rows, err := q.db.Query(ctx, getExpiredMachines, dollar_1)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Machine
+	var items []string
 	for rows.Next() {
-		var i Machine
-		if err := rows.Scan(
-			&i.Uuid,
-			&i.Monitor,
-			&i.CreatedAt,
-			&i.LastUpdated,
-		); err != nil {
+		var uuid string
+		if err := rows.Scan(&uuid); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, uuid)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -91,6 +86,18 @@ func (q *Queries) GetMachines(ctx context.Context) ([]Machine, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const getMonitor = `-- name: GetMonitor :one
+SELECT uuid FROM machines
+WHERE monitor = true
+`
+
+func (q *Queries) GetMonitor(ctx context.Context) (string, error) {
+	row := q.db.QueryRow(ctx, getMonitor)
+	var uuid string
+	err := row.Scan(&uuid)
+	return uuid, err
 }
 
 const setMachineAsMonitor = `-- name: SetMachineAsMonitor :exec

@@ -9,28 +9,28 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-func GetConnections() {
-	q().GetConnections(context.Background())
+func (c QueriesX) GetConnections() {
+	c.q.GetConnections(context.Background())
 }
 
-func GetExpiredConnections() {
+func (c QueriesX) GetExpiredConnections() {
 	interval := pgtype.Interval{
 		Days:         0,
 		Months:       0,
 		Microseconds: (time.Duration(5) * time.Second).Microseconds(),
 		Valid:        true,
 	}
-	q().GetExpiredConnections(context.Background(), interval)
+	c.q.GetExpiredConnections(context.Background(), interval)
 }
 
-func FindMachine(id misc.ConnectionId) {
-	q().FindMachine(context.Background(), string(id))
+func (c QueriesX) FindMachine(id misc.ConnectionId) {
+	c.q.FindMachine(context.Background(), string(id))
 }
 
-func CreateConnection(connectionId misc.ConnectionId, machineId misc.MachineId) {
-	q().CreateConnection(context.Background(), db.CreateConnectionParams{Uuid: string(connectionId), MachineUuid: string(machineId)})
+func (c QueriesX) CreateConnection(connectionId misc.ConnectionId, machineId misc.MachineId) {
+	c.q.CreateConnection(context.Background(), db.CreateConnectionParams{Uuid: string(connectionId), MachineUuid: string(machineId)})
 }
 
-func DeleteConnection(connectionId misc.ConnectionId) {
-	q().DeleteConnection(context.Background(), string(connectionId))
+func (c QueriesX) DeleteConnection(connectionId misc.ConnectionId) {
+	c.q.DeleteConnection(context.Background(), string(connectionId))
 }

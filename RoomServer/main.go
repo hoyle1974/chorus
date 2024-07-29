@@ -3,12 +3,10 @@ package main
 import (
 	"log/slog"
 	"os"
-	"os/signal"
 	"time"
 
 	"github.com/charmbracelet/log"
-	"github.com/hoyle1974/chorus/misc"
-	"github.com/hoyle1974/chorus/ownership"
+	"github.com/hoyle1974/chorus/monitor"
 )
 
 func main() {
@@ -16,27 +14,31 @@ func main() {
 	logger := slog.New(handler)
 	state := NewGlobalState(logger)
 
-	state.ownership = ownership.StartLocalOwnershipService(state)
-	rs := StartLocalRoomService(state)
+	monitor.StartMonitorService(state)
 
-	go func() {
-		sigchan := make(chan os.Signal, 1)
-		signal.Notify(sigchan, os.Interrupt)
-		<-sigchan
-		// Do any cleanup
-		state.machineLease.Destroy()
-		state.ownership.StopLocalService()
-		rs.StopLocalService()
+	/*
+		state.ownership = ownership.StartLocalOwnershipService(state)
+		rs := StartLocalRoomService(state)
 
-		os.Exit(0)
-	}()
+		go func() {
+			sigchan := make(chan os.Signal, 1)
+			signal.Notify(sigchan, os.Interrupt)
+			<-sigchan
+			// Do any cleanup
+			state.machineLease.Destroy()
+			state.ownership.StopLocalService()
+			rs.StopLocalService()
 
-	// See if we should be the owner of a room
-	if state.ownership.GetValidOwner(misc.GetGlobalLobbyId()) == misc.NilMachineId {
-		rs.BootstrapLobby()
-	}
+			os.Exit(0)
+		}()
 
-	rs.gss.logger.Info("RoomServer started.")
+		// See if we should be the owner of a room
+		if state.ownership.GetValidOwner(misc.GetGlobalLobbyId()) == misc.NilMachineId {
+			rs.BootstrapLobby()
+		}
+	*/
+
+	state.logger.Info("RoomServer started.")
 	for {
 		time.Sleep(time.Second)
 	}

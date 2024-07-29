@@ -10,13 +10,18 @@ import (
 
 var conn atomic.Pointer[pgx.Conn]
 
-func getConn() *pgx.Conn {
+func NewConn() (*pgx.Conn, error) {
+	connStr := "host=localhost user=postgres password=postgres sslmode=disable"
+
+	return pgx.Connect(context.Background(), connStr)
+}
+
+func GetConn() *pgx.Conn {
 	if conn.Load() != nil {
 		return conn.Load()
 	}
-	connStr := "host=localhost dbname=chorus user=postgres password=postgres sslmode=disable"
 
-	db, err := pgx.Connect(context.Background(), connStr)
+	db, err := NewConn()
 	if err != nil {
 		panic(err)
 	}
@@ -28,6 +33,17 @@ func getConn() *pgx.Conn {
 	return db
 }
 
-func q() *db.Queries {
-	return db.New(getConn())
+type DBX struct {
+}
+
+func Dbx() DBX {
+	return DBX{}
+}
+
+type QueriesX struct {
+	q *db.Queries
+}
+
+func (dbx DBX) Queries(q *db.Queries) QueriesX {
+	return QueriesX{q: q}
 }

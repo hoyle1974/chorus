@@ -7,7 +7,7 @@
 -- 	- when machines go, the rooms & connections table is watched and cleaned up as needed
 CREATE OR REPLACE FUNCTION notify_machine_update_trigger() RETURNS trigger AS $$
 BEGIN
-  PERFORM pg_notify('machines', 'data changed');
+  PERFORM pg_notify('machines', 'monitor data updated');
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -26,9 +26,15 @@ CREATE INDEX idx_machine_primary ON machines (monitor);
 CREATE INDEX idx_unique_true_value ON machines (monitor) WHERE monitor = true;
 CREATE UNIQUE INDEX idx_unique_true_value_constraint ON machines (monitor) WHERE monitor = true;
 
-CREATE TRIGGER machines_trigger
-AFTER INSERT OR UPDATE OR DELETE ON machines
+-- CREATE TRIGGER machines_trigger_monitor
+-- AFTER UPDATE OF last_updated ON machines
+-- FOR (monitor = true) ROW
+-- EXECUTE FUNCTION notify_machine_update_trigger();
+
+CREATE TRIGGER machines_trigger_monitor
+AFTER UPDATE ON machines
 FOR EACH ROW
+WHEN (OLD.last_updated IS DISTINCT FROM NEW.last_updated)
 EXECUTE FUNCTION notify_machine_update_trigger();
 
 -- This stores rooms
