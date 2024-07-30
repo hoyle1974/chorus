@@ -31,6 +31,12 @@ type MonitorService struct {
 	logger    *slog.Logger
 }
 
+func (ms MonitorService) Destroy() error {
+	q := dbx.Dbx().Queries(db.New(dbx.GetConn()))
+	err := q.DeleteMachine(ms.machineId)
+	return err
+}
+
 func StartMonitorService(ctx MonitorContext) (MonitorService, error) {
 	ms := MonitorService{
 		logger:    ctx.Logger().With("machineId", ctx.MachineId()),

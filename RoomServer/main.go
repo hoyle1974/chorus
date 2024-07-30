@@ -3,6 +3,7 @@ package main
 import (
 	"log/slog"
 	"os"
+	"os/signal"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -14,10 +15,20 @@ func main() {
 	logger := slog.New(handler)
 	state := NewGlobalState(logger)
 
-	_, err := monitor.StartMonitorService(state)
+	monitor, err := monitor.StartMonitorService(state)
 	if err != nil {
 		panic(err)
 	}
+
+	go func() {
+		sigchan := make(chan os.Signal, 1)
+		signal.Notify(sigchan, os.Interrupt)
+		<-sigchan
+		// Do any cleanup
+		monitor.Destroy()
+
+		os.Exit(0)
+	}()
 
 	// conn, err := dbx.NewConn()
 	// if err != nil {
@@ -34,17 +45,7 @@ func main() {
 		state.ownership = ownership.StartLocalOwnershipService(state)
 		rs := StartLocalRoomService(state)
 
-		go func() {
-			sigchan := make(chan os.Signal, 1)
-			signal.Notify(sigchan, os.Interrupt)
-			<-sigchan
-			// Do any cleanup
-			state.machineLease.Destroy()
-			state.ownership.StopLocalService()
-			rs.StopLocalService()
 
-			os.Exit(0)
-		}()
 
 		// See if we should be the owner of a room
 		if state.ownership.GetValidOwner(misc.GetGlobalLobbyId()) == misc.NilMachineId {
