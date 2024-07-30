@@ -6,8 +6,9 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/hoyle1974/chorus/leader"
+
 	"github.com/charmbracelet/log"
-	"github.com/hoyle1974/chorus/monitor"
 )
 
 func main() {
@@ -15,7 +16,7 @@ func main() {
 	logger := slog.New(handler)
 	state := NewGlobalState(logger)
 
-	_, err := monitor.StartMonitorService(state)
+	_, err := leader.StartLeaderService(state)
 	if err != nil {
 		panic(err)
 	}

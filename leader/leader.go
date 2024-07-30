@@ -1,4 +1,4 @@
-package monitor
+package leader
 
 import (
 	"context"
@@ -12,41 +12,41 @@ import (
 )
 
 /*
- * one machine in the cluster is the monitor
+ * one machine in the cluster is the leader per machine type
  *
- * Monitor - continually scans the monitor table.  Machines that are too old, get deleted.
+ * leader - continually scans the leader & machines table.  Machines that are too old, get deleted.
  *
- * Not Monitor - watches the monitor to make sure it updates the table,
- * if it does not, it tries ot become the monitor
+ * Not leader - watches the leader to make sure it updates the table,
+ * if it does not, it tries ot become the leader
  */
 
-type MonitorContext interface {
+type LeaderContext interface {
 	Logger() *slog.Logger
 	MachineId() misc.MachineId
 	MachineType() string
 }
 
-type MonitorService struct {
+type LeaderService struct {
 	dbx         dbx.DBX
 	machineId   misc.MachineId
 	logger      *slog.Logger
 	machineType string
 }
 
-func (ms MonitorService) Destroy() error {
+func (ms LeaderService) Destroy() error {
 	q := dbx.Dbx().Queries(db.New(dbx.GetConn()))
 	err := q.DeleteMachine(ms.machineId)
 	return err
 }
 
-func StartMonitorService(ctx MonitorContext) (MonitorService, error) {
-	ms := MonitorService{
+func StartLeaderService(ctx LeaderContext) (LeaderService, error) {
+	ms := LeaderService{
 		logger:      ctx.Logger().With("machineId", ctx.MachineId()),
 		machineId:   ctx.MachineId(),
 		dbx:         dbx.Dbx(),
 		machineType: ctx.MachineType(),
 	}
-	defer ms.logger.Info("Monitor Service Started . . .")
+	defer ms.logger.Info("Leader Service Started . . .")
 
 	// Create ourselves as a machine in the table
 	q := dbx.Dbx().Queries(db.New(dbx.GetConn()) /*.WithTx(tx)*/)
@@ -65,13 +65,13 @@ func StartMonitorService(ctx MonitorContext) (MonitorService, error) {
 
 	q = dbx.Dbx().Queries(db.New(dbx.GetConn()).WithTx(tx))
 
-	monitorMachineId := q.GetLeaderForType(ctx.MachineType())
-	if monitorMachineId == misc.NilMachineId {
-		// Let's become the monitor
+	leaderMachineId := q.GetLeaderForType(ctx.MachineType())
+	if leaderMachineId == misc.NilMachineId {
+		// Let's become the leader
 		err := q.SetMachineAsLeader(ctx.MachineId())
 		if err == nil {
-			// We are the monitor
-			ms.becomeMonitor(q)
+			// We are the leader
+			ms.becomeLeader(q)
 			err = tx.Commit(context.Background())
 			return ms, err
 		}
@@ -81,11 +81,11 @@ func StartMonitorService(ctx MonitorContext) (MonitorService, error) {
 		return ms, err
 	}
 
-	go ms.waitForMonitor()
+	go ms.waitForLeader()
 	return ms, nil
 }
 
-func (ms MonitorService) keepAliveTick() {
+func (ms LeaderService) keepAliveTick() {
 	ms.logger.Debug("keepAliveTick")
 	conn, err := dbx.NewConn()
 	if err != nil {
@@ -103,14 +103,14 @@ func (ms MonitorService) keepAliveTick() {
 	}
 }
 
-func (ms MonitorService) becomeMonitor(q dbx.QueriesX) {
-	ms.logger.Info("We are the monitor")
-	ms.logger = ms.logger.With("monitor", true)
-	go ms.monitor()
+func (ms LeaderService) becomeLeader(q dbx.QueriesX) {
+	ms.logger.Info("We are the leader")
+	ms.logger = ms.logger.With("leader", true)
+	go ms.monitorLeadership()
 }
 
-func (ms MonitorService) monitor() {
-	ms.logger.Debug("monitor")
+func (ms LeaderService) monitorLeadership() {
+	ms.logger.Debug("leader")
 
 	ttl := time.Duration(5) * time.Second
 
@@ -152,9 +152,9 @@ func (ms MonitorService) monitor() {
 	}
 }
 
-// We are not the monitor, but wait to see if we can become a monitor
-func (ms MonitorService) waitForMonitor() {
-	ms.logger.Debug("waitForMonitor")
+// We are not the leader, but wait to see if we can become a leader
+func (ms LeaderService) waitForLeader() {
+	ms.logger.Debug("waitForLeader")
 
 	conn, err := dbx.NewConn()
 	if err != nil {
@@ -181,35 +181,35 @@ func (ms MonitorService) waitForMonitor() {
 			dbq := db.New(conn)
 			q := dbx.Dbx().Queries(dbq)
 
-			// Timeout occured, the monitor is no longer valid, let's become the monitor
+			// Timeout occured, the monleaderitor is no longer valid, let's become the leader
 			machineId := q.GetLeaderForType(ms.machineType)
 			if machineId != misc.NilMachineId {
 				machine, err := q.GetMachine(machineId)
 				if err == nil {
-					// Monitor machine has timed out
+					// Leader machine has timed out
 					if time.Now().Sub(machine.LastUpdated).Seconds() > 5 {
-						ms.logger.Warn("Monitor deadline exceeded, let's try to become the monitor now")
+						ms.logger.Warn("Leader deadline exceeded, let's try to become the leader now")
 
 						err = q.DeleteMachine(machineId)
 						if err == nil {
 							err := q.SetMachineAsLeader(ms.machineId)
 							if err == nil {
-								ms.becomeMonitor(q)
+								ms.becomeLeader(q)
 								err = tx.Commit(context.Background())
 								if err != nil {
 									panic(err)
 								}
 								return
 							} else {
-								ms.logger.Error("could not become the monitor", "error", err)
+								ms.logger.Error("could not become the leader", "error", err)
 							}
 						} else {
-							ms.logger.Error("could not delete expired monitor", "error", err)
+							ms.logger.Error("could not delete expired leader", "error", err)
 						}
 					}
 				}
 			} else {
-				ms.logger.Error("could not get a monitor", "error", err)
+				ms.logger.Error("could not get a leader", "error", err)
 			}
 			tx.Rollback(context.Background())
 		} else {
