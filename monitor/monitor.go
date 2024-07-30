@@ -23,12 +23,14 @@ import (
 type MonitorContext interface {
 	Logger() *slog.Logger
 	MachineId() misc.MachineId
+	MachineType() string
 }
 
 type MonitorService struct {
-	dbx       dbx.DBX
-	machineId misc.MachineId
-	logger    *slog.Logger
+	dbx         dbx.DBX
+	machineId   misc.MachineId
+	logger      *slog.Logger
+	machineType string
 }
 
 func (ms MonitorService) Destroy() error {
@@ -39,11 +41,20 @@ func (ms MonitorService) Destroy() error {
 
 func StartMonitorService(ctx MonitorContext) (MonitorService, error) {
 	ms := MonitorService{
-		logger:    ctx.Logger().With("machineId", ctx.MachineId()),
-		machineId: ctx.MachineId(),
-		dbx:       dbx.Dbx(),
+		logger:      ctx.Logger().With("machineId", ctx.MachineId()),
+		machineId:   ctx.MachineId(),
+		dbx:         dbx.Dbx(),
+		machineType: ctx.MachineType(),
 	}
 	defer ms.logger.Info("Monitor Service Started . . .")
+
+	// Create ourselves as a machine in the table
+	q := dbx.Dbx().Queries(db.New(dbx.GetConn()) /*.WithTx(tx)*/)
+	err := q.CreateMachine(ctx.MachineId(), ctx.MachineType())
+	if err != nil {
+		return ms, err
+	}
+	go ms.keepAliveTick()
 
 	// Start transaction
 	tx, err := dbx.GetConn().Begin(context.Background())
@@ -52,25 +63,18 @@ func StartMonitorService(ctx MonitorContext) (MonitorService, error) {
 	}
 	defer tx.Rollback(context.Background())
 
-	// Create ourselves as a machine in the table
-	q := dbx.Dbx().Queries(db.New(dbx.GetConn()).WithTx(tx))
-	err = q.CreateMachine(ctx.MachineId())
-	if err != nil {
-		return ms, err
-	}
-	go ms.keepAliveTick()
+	q = dbx.Dbx().Queries(db.New(dbx.GetConn()).WithTx(tx))
 
-	monitorMachineId := q.GetMonitor()
+	monitorMachineId := q.GetLeaderForType(ctx.MachineType())
 	if monitorMachineId == misc.NilMachineId {
 		// Let's become the monitor
-		err := q.SetMachineAsMonitor(ctx.MachineId())
-		if err != nil {
-			// Nope we are not the monitor
-			go ms.waitForMonitor()
-			return ms, nil
+		err := q.SetMachineAsLeader(ctx.MachineId())
+		if err == nil {
+			// We are the monitor
+			ms.becomeMonitor(q)
+			err = tx.Commit(context.Background())
+			return ms, err
 		}
-		// We are the monitor
-		ms.becomeMonitor(q)
 	}
 	err = tx.Commit(context.Background())
 	if err != nil {
@@ -99,19 +103,10 @@ func (ms MonitorService) keepAliveTick() {
 	}
 }
 
-func (ms MonitorService) becomeMonitor(q dbx.QueriesX) error {
-	ms.logger.Debug("becomeMonitor")
-
-	err := q.SetMachineAsMonitor(ms.machineId)
-	if err == nil {
-		ms.logger.Info("We are the monitor")
-		ms.logger = ms.logger.With("monitor", true)
-		go ms.monitor()
-	} else {
-		ms.logger.Error("Not able to become monitor at the moment.")
-	}
-
-	return err
+func (ms MonitorService) becomeMonitor(q dbx.QueriesX) {
+	ms.logger.Info("We are the monitor")
+	ms.logger = ms.logger.With("monitor", true)
+	go ms.monitor()
 }
 
 func (ms MonitorService) monitor() {
@@ -187,7 +182,7 @@ func (ms MonitorService) waitForMonitor() {
 			q := dbx.Dbx().Queries(dbq)
 
 			// Timeout occured, the monitor is no longer valid, let's become the monitor
-			machineId := q.GetMonitor()
+			machineId := q.GetLeaderForType(ms.machineType)
 			if machineId != misc.NilMachineId {
 				machine, err := q.GetMachine(machineId)
 				if err == nil {
@@ -197,10 +192,13 @@ func (ms MonitorService) waitForMonitor() {
 
 						err = q.DeleteMachine(machineId)
 						if err == nil {
-							err = ms.becomeMonitor(q)
+							err := q.SetMachineAsLeader(ms.machineId)
 							if err == nil {
-								// We are the monitor, no more waiting
-								tx.Commit(context.Background())
+								ms.becomeMonitor(q)
+								err = tx.Commit(context.Background())
+								if err != nil {
+									panic(err)
+								}
 								return
 							} else {
 								ms.logger.Error("could not become the monitor", "error", err)

@@ -16,20 +16,16 @@ $$ LANGUAGE plpgsql;
 -- some process monitors this table and cleans it up if needed
 CREATE TABLE machines (
     uuid TEXT PRIMARY KEY,
-    monitor BOOLEAN NOT NULL,
+    machine_type TEXT NOT NULL,
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     last_updated TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX idx_machine_primary ON machines (monitor);
 
--- Only allow one row to be true
-CREATE INDEX idx_unique_true_value ON machines (monitor) WHERE monitor = true;
-CREATE UNIQUE INDEX idx_unique_true_value_constraint ON machines (monitor) WHERE monitor = true;
+-- Records in here represent that for a machine type this is the master
+CREATE TABLE machine_type_leader (
+    machine_uuid TEXT PRIMARY KEY REFERENCES machines(uuid) ON DELETE CASCADE
+);
 
--- CREATE TRIGGER machines_trigger_monitor
--- AFTER UPDATE OF last_updated ON machines
--- FOR (monitor = true) ROW
--- EXECUTE FUNCTION notify_machine_update_trigger();
 
 CREATE TRIGGER machines_trigger_monitor
 AFTER UPDATE ON machines

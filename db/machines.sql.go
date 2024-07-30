@@ -9,16 +9,44 @@ import (
 	"context"
 )
 
-const createMachine = `-- name: CreateMachine :exec
-INSERT INTO machines (
-    uuid, monitor
+const createLeader = `-- name: CreateLeader :exec
+INSERT INTO machine_type_leader (
+    machine_uuid
 ) VALUES (
-    $1, false
+    $1
 )
 `
 
-func (q *Queries) CreateMachine(ctx context.Context, uuid string) error {
-	_, err := q.db.Exec(ctx, createMachine, uuid)
+func (q *Queries) CreateLeader(ctx context.Context, machineUuid string) error {
+	_, err := q.db.Exec(ctx, createLeader, machineUuid)
+	return err
+}
+
+const createMachine = `-- name: CreateMachine :exec
+INSERT INTO machines (
+    uuid, machine_type
+) VALUES (
+    $1, $2
+)
+`
+
+type CreateMachineParams struct {
+	Uuid        string
+	MachineType string
+}
+
+func (q *Queries) CreateMachine(ctx context.Context, arg CreateMachineParams) error {
+	_, err := q.db.Exec(ctx, createMachine, arg.Uuid, arg.MachineType)
+	return err
+}
+
+const deleteLeader = `-- name: DeleteLeader :exec
+DELETE FROM machine_type_leader
+WHERE machine_uuid = $1
+`
+
+func (q *Queries) DeleteLeader(ctx context.Context, machineUuid string) error {
+	_, err := q.db.Exec(ctx, deleteLeader, machineUuid)
 	return err
 }
 
@@ -32,8 +60,22 @@ func (q *Queries) DeleteMachine(ctx context.Context, uuid string) error {
 	return err
 }
 
+const getLeaderForType = `-- name: GetLeaderForType :one
+SELECT machines.uuid                                                                                                                                                                            
+FROM machine_type_leader, machines                                                                                                                                                                            
+WHERE machines.machine_type = $1                                                                                                                                                                         
+AND machine_type_leader.machine_uuid = machines.uuid
+`
+
+func (q *Queries) GetLeaderForType(ctx context.Context, machineType string) (string, error) {
+	row := q.db.QueryRow(ctx, getLeaderForType, machineType)
+	var uuid string
+	err := row.Scan(&uuid)
+	return uuid, err
+}
+
 const getMachine = `-- name: GetMachine :one
-SELECT uuid, monitor, created_at, last_updated FROM machines 
+SELECT uuid, machine_type, created_at, last_updated FROM machines 
 WHERE uuid=$1
 `
 
@@ -42,15 +84,29 @@ func (q *Queries) GetMachine(ctx context.Context, uuid string) (Machine, error) 
 	var i Machine
 	err := row.Scan(
 		&i.Uuid,
-		&i.Monitor,
+		&i.MachineType,
 		&i.CreatedAt,
 		&i.LastUpdated,
 	)
 	return i, err
 }
 
+const getMachineLeaderCountByType = `-- name: GetMachineLeaderCountByType :one
+SELECT COUNT(*) 
+FROM machine_type_leader, machines                                                                                                                                                                            
+WHERE machines.machine_type = $1                                                                                                                                                                         
+AND machine_type_leader.machine_uuid = machines.uuid
+`
+
+func (q *Queries) GetMachineLeaderCountByType(ctx context.Context, machineType string) (int64, error) {
+	row := q.db.QueryRow(ctx, getMachineLeaderCountByType, machineType)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getMachines = `-- name: GetMachines :many
-SELECT uuid, monitor, created_at, last_updated FROM machines
+SELECT uuid, machine_type, created_at, last_updated FROM machines
 `
 
 func (q *Queries) GetMachines(ctx context.Context) ([]Machine, error) {
@@ -64,7 +120,7 @@ func (q *Queries) GetMachines(ctx context.Context) ([]Machine, error) {
 		var i Machine
 		if err := rows.Scan(
 			&i.Uuid,
-			&i.Monitor,
+			&i.MachineType,
 			&i.CreatedAt,
 			&i.LastUpdated,
 		); err != nil {
@@ -78,26 +134,16 @@ func (q *Queries) GetMachines(ctx context.Context) ([]Machine, error) {
 	return items, nil
 }
 
-const getMonitor = `-- name: GetMonitor :one
-SELECT uuid FROM machines
-WHERE monitor = true
+const setMachineAsLeader = `-- name: SetMachineAsLeader :exec
+INSERT INTO machine_type_leader (
+    machine_uuid
+) VALUES (
+    $1
+)
 `
 
-func (q *Queries) GetMonitor(ctx context.Context) (string, error) {
-	row := q.db.QueryRow(ctx, getMonitor)
-	var uuid string
-	err := row.Scan(&uuid)
-	return uuid, err
-}
-
-const setMachineAsMonitor = `-- name: SetMachineAsMonitor :exec
-UPDATE machines 
-SET monitor=true
-WHERE uuid = $1
-`
-
-func (q *Queries) SetMachineAsMonitor(ctx context.Context, uuid string) error {
-	_, err := q.db.Exec(ctx, setMachineAsMonitor, uuid)
+func (q *Queries) SetMachineAsLeader(ctx context.Context, machineUuid string) error {
+	_, err := q.db.Exec(ctx, setMachineAsLeader, machineUuid)
 	return err
 }
 

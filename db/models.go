@@ -17,9 +17,13 @@ type Connection struct {
 
 type Machine struct {
 	Uuid        string
-	Monitor     bool
+	MachineType string
 	CreatedAt   pgtype.Timestamp
 	LastUpdated pgtype.Timestamp
+}
+
+type MachineTypeLeader struct {
+	MachineUuid string
 }
 
 type Room struct {

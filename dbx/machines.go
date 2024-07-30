@@ -17,33 +17,28 @@ func (c QueriesX) GetMachines() {
 	c.q.GetMachines(context.Background())
 }
 
-func (c QueriesX) CreateMachine(machineId misc.MachineId) error {
-	return c.q.CreateMachine(context.Background(), string(machineId))
+func (c QueriesX) CreateMachine(machineId misc.MachineId, machineType string) error {
+	return c.q.CreateMachine(context.Background(), db.CreateMachineParams{
+		Uuid:        string(machineId),
+		MachineType: machineType,
+	})
 }
 
 func (c QueriesX) DeleteMachine(machineId misc.MachineId) error {
 	return c.q.DeleteMachine(context.Background(), string(machineId))
 }
 
-func (c QueriesX) GetMonitor() misc.MachineId {
-	s, e := c.q.GetMonitor(context.Background())
-	if e != nil {
-		return misc.NilMachineId
-	}
-	return misc.MachineId(s)
-}
-
 type Machine struct {
 	Uuid        misc.MachineId
-	Monitor     bool
+	MachineType string
 	CreatedAt   time.Time
 	LastUpdated time.Time
 }
 
-func toMAchine(in db.Machine) Machine {
+func toMachine(in db.Machine) Machine {
 	return Machine{
 		Uuid:        misc.MachineId(in.Uuid),
-		Monitor:     in.Monitor,
+		MachineType: in.MachineType,
 		CreatedAt:   in.CreatedAt.Time,
 		LastUpdated: in.LastUpdated.Time,
 	}
@@ -51,13 +46,21 @@ func toMAchine(in db.Machine) Machine {
 
 func (c QueriesX) GetMachine(machineId misc.MachineId) (Machine, error) {
 	s, err := c.q.GetMachine(context.Background(), string(machineId))
-	return toMAchine(s), err
-}
-
-func (c QueriesX) SetMachineAsMonitor(machineId misc.MachineId) error {
-	return c.q.SetMachineAsMonitor(timeoutCtx(5), string(machineId))
+	return toMachine(s), err
 }
 
 func (c QueriesX) TouchMachine(machineId misc.MachineId) error {
 	return c.q.TouchMachine(timeoutCtx(5), string(machineId))
+}
+
+func (c QueriesX) GetLeaderForType(machineType string) misc.MachineId {
+	s, err := c.q.GetLeaderForType(context.Background(), machineType)
+	if err != nil {
+		return misc.NilMachineId
+	}
+	return misc.MachineId(s)
+}
+
+func (c QueriesX) SetMachineAsLeader(uuid misc.MachineId) error {
+	return c.q.SetMachineAsLeader(context.Background(), string(uuid))
 }

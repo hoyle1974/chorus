@@ -15,7 +15,7 @@ func main() {
 	logger := slog.New(handler)
 	state := NewGlobalState(logger)
 
-	monitor, err := monitor.StartMonitorService(state)
+	_, err := monitor.StartMonitorService(state)
 	if err != nil {
 		panic(err)
 	}
@@ -25,7 +25,7 @@ func main() {
 		signal.Notify(sigchan, os.Interrupt)
 		<-sigchan
 		// Do any cleanup
-		monitor.Destroy()
+		//monitor.Destroy()
 
 		os.Exit(0)
 	}()
