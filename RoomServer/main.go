@@ -6,17 +6,25 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/hoyle1974/chorus/dbx"
 	"github.com/hoyle1974/chorus/leader"
 
 	"github.com/charmbracelet/log"
 )
+
+func onLeaderStartFunc(logger *slog.Logger, q dbx.QueriesX) {
+	// logger.Debug("onLeaderStartFunc")
+}
+func onLeaderTickFunc(logger *slog.Logger, q dbx.QueriesX) {
+	// logger.Debug("onLeaderTickFunc")
+}
 
 func main() {
 	handler := log.NewWithOptions(os.Stderr, log.Options{Level: log.DebugLevel})
 	logger := slog.New(handler)
 	state := NewGlobalState(logger)
 
-	_, err := leader.StartLeaderService(state)
+	leader, err := leader.StartLeaderService(state, onLeaderStartFunc, onLeaderTickFunc)
 	if err != nil {
 		panic(err)
 	}
@@ -25,8 +33,9 @@ func main() {
 		sigchan := make(chan os.Signal, 1)
 		signal.Notify(sigchan, os.Interrupt)
 		<-sigchan
+
 		// Do any cleanup
-		//monitor.Destroy()
+		leader.Destroy()
 
 		os.Exit(0)
 	}()

@@ -26,6 +26,7 @@ type GlobalServerState struct {
 func (s GlobalServerState) Logger() *slog.Logger      { return s.logger }
 func (s GlobalServerState) MachineId() misc.MachineId { return s.machineId }
 func (s GlobalServerState) Dist() distributed.Dist    { return s.dist }
+func (s GlobalServerState) MachineType() string       { return "EUS" }
 
 func NewGlobalState(logger *slog.Logger) GlobalServerState {
 	ss := GlobalServerState{

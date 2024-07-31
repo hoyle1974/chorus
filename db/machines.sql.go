@@ -134,6 +134,35 @@ func (q *Queries) GetMachines(ctx context.Context) ([]Machine, error) {
 	return items, nil
 }
 
+const getMachinesByType = `-- name: GetMachinesByType :many
+SELECt uuid, machine_type, created_at, last_updated FROM machines where machine_type = $1
+`
+
+func (q *Queries) GetMachinesByType(ctx context.Context, machineType string) ([]Machine, error) {
+	rows, err := q.db.Query(ctx, getMachinesByType, machineType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Machine
+	for rows.Next() {
+		var i Machine
+		if err := rows.Scan(
+			&i.Uuid,
+			&i.MachineType,
+			&i.CreatedAt,
+			&i.LastUpdated,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setMachineAsLeader = `-- name: SetMachineAsLeader :exec
 INSERT INTO machine_type_leader (
     machine_uuid

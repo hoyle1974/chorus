@@ -27,10 +27,12 @@ type LeaderContext interface {
 }
 
 type LeaderService struct {
-	dbx         dbx.DBX
-	machineId   misc.MachineId
-	logger      *slog.Logger
-	machineType string
+	dbx           dbx.DBX
+	machineId     misc.MachineId
+	logger        *slog.Logger
+	machineType   string
+	onLeaderStart onLeader
+	onLeaderTick  onLeader
 }
 
 func (ms LeaderService) Destroy() error {
@@ -39,12 +41,16 @@ func (ms LeaderService) Destroy() error {
 	return err
 }
 
-func StartLeaderService(ctx LeaderContext) (LeaderService, error) {
+type onLeader func(logger *slog.Logger, q dbx.QueriesX)
+
+func StartLeaderService(ctx LeaderContext, onLeaderStart onLeader, onLeaderTick onLeader) (LeaderService, error) {
 	ms := LeaderService{
-		logger:      ctx.Logger().With("machineId", ctx.MachineId()),
-		machineId:   ctx.MachineId(),
-		dbx:         dbx.Dbx(),
-		machineType: ctx.MachineType(),
+		logger:        ctx.Logger().With("machineId", ctx.MachineId(), "type", ctx.MachineType()),
+		machineId:     ctx.MachineId(),
+		dbx:           dbx.Dbx(),
+		machineType:   ctx.MachineType(),
+		onLeaderStart: onLeaderStart,
+		onLeaderTick:  onLeaderTick,
 	}
 	defer ms.logger.Info("Leader Service Started . . .")
 
@@ -112,43 +118,34 @@ func (ms LeaderService) becomeLeader(q dbx.QueriesX) {
 func (ms LeaderService) monitorLeadership() {
 	ms.logger.Debug("leader")
 
-	ttl := time.Duration(5) * time.Second
+	conn, err := dbx.NewConn()
+	if err != nil {
+		panic(err)
+	}
+	q := dbx.Dbx().Queries(db.New(conn))
+
+	ms.onLeaderStart(ms.logger, q)
 
 	for {
-		ctx, _ := context.WithTimeout(context.Background(), time.Duration(5)*time.Second)
 		time.Sleep(time.Duration(1) * time.Second)
-		conn, err := dbx.NewConn()
+		machines, err := q.GetMachinesByType(ms.machineType)
+		now := time.Now()
 		if err == nil {
-			q := db.New(conn)
-			ctx, _ = context.WithTimeout(context.Background(), time.Duration(5)*time.Second)
-			machines, err := q.GetMachines(ctx)
-			now := time.Now()
-			if err == nil {
-				for _, machine := range machines {
-					if now.Sub(machine.LastUpdated.Time).Seconds() > 5 {
-						ms.logger.Debug("Delete machine", "machineToDelete", machine.Uuid)
-						ctx, _ = context.WithTimeout(context.Background(), ttl)
-						q.DeleteMachine(ctx, machine.Uuid)
+			for _, machine := range machines {
+				if now.Sub(machine.LastUpdated).Seconds() > 5 {
+					ms.logger.Debug("Delete machine", "machineToDelete", machine.Uuid)
+					err := q.DeleteMachine(machine.Uuid)
+					if err != nil {
+						ms.logger.Error("Problem deleting machine", "error", err)
 					}
 				}
-			} else {
-				ms.logger.Error("Trouble getting a list of all machines", "error", err)
 			}
-
-			ctx, _ = context.WithTimeout(context.Background(), time.Duration(5)*time.Second)
-			connections, err := q.GetConnections(ctx)
-			if err == nil {
-				for _, connection := range connections {
-					if now.Sub(connection.LastUpdated.Time).Seconds() > 5 {
-						ms.logger.Debug("Delete connection", "connectionToDelete", connection.Uuid)
-						ctx, _ = context.WithTimeout(context.Background(), ttl)
-						q.DeleteConnection(ctx, connection.Uuid)
-					}
-				}
-			} else {
-				ms.logger.Error("Trouble getting a list of all connections", "err", err)
-			}
+		} else {
+			ms.logger.Error("Trouble getting a list of all machines", "error", err)
 		}
+
+		ms.onLeaderTick(ms.logger, q)
+
 	}
 }
 

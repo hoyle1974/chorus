@@ -17,6 +17,18 @@ func (c QueriesX) GetMachines() {
 	c.q.GetMachines(context.Background())
 }
 
+func (c QueriesX) GetMachinesByType(machineType string) ([]Machine, error) {
+	ms, err := c.q.GetMachinesByType(context.Background(), machineType)
+	machines := []Machine{}
+	if err != nil {
+		return machines, err
+	}
+	for _, dbMachine := range ms {
+		machines = append(machines, toMachine(dbMachine))
+	}
+	return machines, err
+}
+
 func (c QueriesX) CreateMachine(machineId misc.MachineId, machineType string) error {
 	return c.q.CreateMachine(context.Background(), db.CreateMachineParams{
 		Uuid:        string(machineId),
