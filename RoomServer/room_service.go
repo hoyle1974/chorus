@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/hoyle1974/chorus/distributed"
+	"github.com/hoyle1974/chorus/db"
+	"github.com/hoyle1974/chorus/dbx"
 	"github.com/hoyle1974/chorus/message"
 	"github.com/hoyle1974/chorus/misc"
 	"github.com/hoyle1974/chorus/pubsub"
 )
 
-// Room list store all room info in Redis
 // When a server starts, it checks the room list to make sure all rooms are claimeed
 // It may take ownership of them or clean them up based on room policies
 
@@ -39,82 +39,74 @@ func NewRoomInfoFromString(s string) RoomInfo {
 }
 
 type RoomService struct {
-	gss        GlobalServerState
+	state      GlobalServerState
 	localRooms map[misc.RoomId]*Room
-	rooms      distributed.Set
 }
 
-func StartLocalRoomService(gss GlobalServerState) *RoomService {
+func StartLocalRoomService(state GlobalServerState) *RoomService {
 	rs := &RoomService{
-		gss:        gss,
+		state:      state,
 		localRooms: map[misc.RoomId]*Room{},
-		rooms:      gss.dist.BindSet("rooms"),
 	}
 
-	rs.Start()
-
-	gss.logger.Info("Local Room Service is started.")
+	state.logger.Info("Local Room Service is started.")
 	return rs
 }
 
-func (o *RoomService) StopLocalService() {
-	// TODO
-}
-
-func (rs *RoomService) Start() {
-	go rs.run()
-}
-
-func (rs *RoomService) run() {
+func (rs *RoomService) RoomServiceProcess() {
 	for {
-		roomIds, err := rs.rooms.SMembers()
+		q := dbx.Dbx().Queries(db.New(dbx.GetConn()))
+		rooms, err := q.GetOrphanedRooms()
 		if err != nil {
-			panic(err)
+			rs.state.logger.Error("Could not get rooms", "error", err)
+			return
 		}
-		for _, roomId := range roomIds {
-			info := rs.getRoomInfo(misc.RoomId(roomId))
-
-			if rs.gss.ownership.GetValidOwner(info.RoomId) == misc.NilMachineId {
-				rs.gss.logger.Warn("owner is not online:", "info", info)
-				if rs.gss.ownership.ClaimOwnership(info.RoomId, time.Duration(15)*time.Second) {
-					room := rs.bindRoomToThisMachine(info)
-					if info.DestroyOnOrphan {
-						room.Destroy()
+		for _, dbRoom := range rooms {
+			rs.state.logger.Info("Orphaned Room", "room", dbRoom)
+			/*
+				for _, dbRoom := range rooms {
+					rs.state.logger.Warn("owner is not online:", "info", dbRoom)
+					if rs.state.ownership.ClaimOwnership(dbRoom.RoomId, time.Duration(15)*time.Second) {
+						room := rs.bindRoomToThisMachine(dbRoom)
+						if dbRoom.DestroyOnOrphan {
+							room.Destroy()
+						}
+					} else {
+						rs.state.logger.Warn("could not claim ownership", "info", dbRoom)
 					}
-				} else {
-					rs.gss.logger.Warn("could not claim ownership", "info", info)
 				}
-			}
+			*/
 		}
-
-		time.Sleep(time.Duration(1) * time.Second)
 	}
 }
 
-func (rs *RoomService) BootstrapLobby() {
-	if !rs.gss.ownership.ClaimOwnership(misc.GetGlobalLobbyId(), time.Duration(15)*time.Second) {
-		rs.gss.logger.Warn("Could not bootstrap lobby, someone else owns it")
+func (rs *RoomService) BootstrapLobby() bool {
+	info := RoomInfo{
+		RoomId:          misc.GetGlobalLobbyId(),
+		AdminScript:     "matchmaker.js",
+		Name:            "Global Lobby",
+		DestroyOnOrphan: false,
 	}
-
-	info := RoomInfo{RoomId: misc.GetGlobalLobbyId(), AdminScript: "matchmaker.js", DestroyOnOrphan: false}
-	rs.bindRoomToThisMachine(info)
+	_, err := rs.NewRoom(info)
+	return err == nil
 }
 
-func (rs *RoomService) NewRoom(info RoomInfo) *Room {
-	if !rs.gss.ownership.ClaimOwnership(info.RoomId, time.Duration(15)*time.Second) {
-		rs.gss.logger.Error("Could not claim room, someone else owns it", "info", info)
-		return nil
-	}
-	return rs.bindRoomToThisMachine(info)
-}
-
-func (rs *RoomService) getRoomInfo(roomId misc.RoomId) RoomInfo {
-	infoS, err := rs.gss.dist.Get(roomId.RoomKey())
+func (rs *RoomService) NewRoom(info RoomInfo) (*Room, error) {
+	q := dbx.Dbx().Queries(db.New(dbx.GetConn()))
+	err := q.CreateRoom(info.RoomId, rs.state.MachineId(), info.Name, info.AdminScript, info.DestroyOnOrphan)
 	if err != nil {
-		return RoomInfo{}
+		return nil, err
 	}
-	return NewRoomInfoFromString(infoS)
+	return rs.bindRoomToThisMachine(info), nil
 }
+
+// func (rs *RoomService) getRoomInfo(roomId misc.RoomId) RoomInfo {
+// 	infoS, err := rs.state.dist.Get(roomId.RoomKey())
+// 	if err != nil {
+// 		return RoomInfo{}
+// 	}
+// 	return NewRoomInfoFromString(infoS)
+// }
 
 /*
 func (rs *RoomService) isOwnerOnline(roomId misc.RoomId) bool {
@@ -148,25 +140,23 @@ func (rs *RoomService) waitForOwnership(roomId misc.RoomId) {
 // We are the owner, but we need to bind a local struct to the
 // instance in redis
 func (rs *RoomService) bindRoomToThisMachine(info RoomInfo) *Room {
-	rs.gss.logger.Debug("Binding locally", "roomId", info.RoomId)
-
-	rs.gss.dist.Put(info.RoomId.RoomKey(), info.String())
+	rs.state.logger.Debug("Binding locally", "roomId", info.RoomId)
 
 	r := &Room{
-		state:       rs.gss,
+		state:       rs.state,
 		roomService: rs,
 		info:        info,
-		logger:      rs.gss.logger.With("info", info),
-		members:     rs.gss.dist.BindSet(info.RoomId.RoomMembershipKey()),
+		logger:      rs.state.logger.With("info", info),
+		// members:     rs.state.dist.BindSet(info.RoomId.RoomMembershipKey()),
 	}
-	_, err := rs.rooms.SAdd(string(info.RoomId))
-	if err != nil {
-		panic(err)
-	}
+	// _, err := rs.rooms.SAdd(string(info.RoomId))
+	// if err != nil {
+	// 	panic(err)
+	// }
 
-	ctx, err := createScriptEnvironmentForRoom(r, info.AdminScript, rs.gss.ownership)
+	ctx, err := createScriptEnvironmentForRoom(r, info.AdminScript)
 	if err != nil {
-		rs.gss.logger.Error("createScriptEnvironmentForRoom", "error", err)
+		rs.state.logger.Error("createScriptEnvironmentForRoom", "error", err)
 		return nil
 	}
 	r.ctx = ctx

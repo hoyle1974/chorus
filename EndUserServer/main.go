@@ -8,33 +8,37 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
-	"github.com/hoyle1974/chorus/dbx"
 	"github.com/hoyle1974/chorus/leader"
+	"github.com/hoyle1974/chorus/misc"
 	"github.com/hoyle1974/chorus/ownership"
 )
 
-func onLeaderStartFunc(logger *slog.Logger, q dbx.QueriesX) {
+func onLeaderStartFunc(ctx leader.LeaderQueryContext) {
 	// logger.Debug("onLeaderStartFunc")
 }
-func onLeaderTickFunc(logger *slog.Logger, q dbx.QueriesX) {
+func onLeaderTickFunc(ctx leader.LeaderQueryContext) {
 	// logger.Debug("onLeaderTickFunc")
 
 	// Cleanup old connections
-	connections, err := q.GetConnections()
+	connections, err := ctx.Query().GetConnections()
 	now := time.Now()
 	if err == nil {
 		for _, connection := range connections {
 			if now.Sub(connection.LastUpdated).Seconds() > 5 {
-				logger.Debug("Delete connection", "connectionId", connection.Uuid)
-				err := q.DeleteConnection(connection.Uuid)
+				ctx.Logger().Debug("Delete connection", "connectionId", connection.Uuid)
+				err := ctx.Query().DeleteConnection(connection.Uuid)
 				if err != nil {
-					logger.Error("Problem deleting connection", "error", err)
+					ctx.Logger().Error("Problem deleting connection", "error", err)
 				}
 			}
 		}
 	} else {
-		logger.Error("Trouble getting a list of all connections", "error", err)
+		ctx.Logger().Error("Trouble getting a list of all connections", "error", err)
 	}
+}
+func onMachineOffline(ctx leader.LeaderQueryContext, machineId misc.MachineId) {
+	// We have a machine that is offline, what cleanup should we do?
+
 }
 
 func main() {
@@ -43,7 +47,7 @@ func main() {
 
 	state := NewGlobalState(logger)
 
-	leader, err := leader.StartLeaderService(state, onLeaderStartFunc, onLeaderTickFunc)
+	leader, err := leader.StartLeaderService(state, onLeaderStartFunc, onLeaderTickFunc, onMachineOffline)
 	if err != nil {
 		panic(err)
 	}

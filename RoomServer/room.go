@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/hoyle1974/chorus/db"
+	"github.com/hoyle1974/chorus/dbx"
 	"github.com/hoyle1974/chorus/distributed"
 	"github.com/hoyle1974/chorus/message"
 	"github.com/hoyle1974/chorus/misc"
@@ -31,8 +33,8 @@ type Room struct {
 
 func (r *Room) Destroy() {
 	r.logger.Info("Deleting room")
-	r.state.dist.Del(r.info.RoomId.RoomKey())
-	r.roomService.rooms.SRem(r.info.RoomId)
+	// r.state.dist.Del(r.info.RoomId.RoomKey())
+	// r.roomService.rooms.SRem(r.info.RoomId)
 }
 
 func (r *Room) OnMessageFromTopic(m pubsub.Message) {
@@ -81,7 +83,7 @@ func (r *Room) callJSOnMessage(msg *message.Message) error {
 	return nil
 }
 
-func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string, own *ownership.OwnershipService) (*v8go.Context, error) {
+func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8go.Context, error) {
 	// Create a new Isolate for sandboxed execution
 	isolate := v8go.NewIsolate()
 
@@ -148,12 +150,16 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string, own 
 			DestroyOnOrphan: true,
 		}
 
-		newRoom := room.roomService.NewRoom(roomInfo)
-		objTemplate := newRoom.JSTemplate(isolate, own)
+		newRoom, err := room.roomService.NewRoom(roomInfo)
+		if err != nil {
+			room.logger.Error("NewRoom", "error", err)
+			return nil
+		}
+		objTemplate := newRoom.JSTemplate(isolate)
 
 		obj, err := objTemplate.NewInstance(info.Context())
 		if err != nil {
-			room.logger.Error("NewObjectTemplate", "err", err)
+			room.logger.Error("NewInstance", "error", err)
 			return nil
 		}
 
@@ -166,7 +172,7 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string, own 
 
 	thisRoom := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
 		// create global thisRoom in JS context
-		objTemplate := room.JSTemplate(isolate, own)
+		objTemplate := room.JSTemplate(isolate)
 		obj, err := objTemplate.NewInstance(room.ctx)
 		if err != nil {
 			room.logger.Error(fmt.Sprintf("js objTemplate NewInstance: %w", err))
@@ -191,7 +197,7 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string, own 
 	return ctx, nil
 }
 
-func (r *Room) JSTemplate(isolate *v8go.Isolate, own *ownership.OwnershipService) *v8go.ObjectTemplate {
+func (r *Room) JSTemplate(isolate *v8go.Isolate) *v8go.ObjectTemplate {
 	// Create a new java object that represents a room
 	objTemplate := v8go.NewObjectTemplate(isolate)
 	objTemplate.Set("Id", r.info.RoomId)
@@ -199,7 +205,9 @@ func (r *Room) JSTemplate(isolate *v8go.Isolate, own *ownership.OwnershipService
 
 	join := v8go.NewFunctionTemplate(isolate, func(info *v8go.FunctionCallbackInfo) *v8go.Value {
 		id := misc.ConnectionId(info.Args()[0].String())
-		mid := own.GetOwner(id)
+
+		q := dbx.Dbx().Queries(db.New(dbx.GetConn()))
+		mid := q.FindMachine(id)
 
 		fmt.Println("Looked up ", id, " and found on ", mid)
 

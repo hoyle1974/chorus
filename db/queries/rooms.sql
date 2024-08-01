@@ -17,12 +17,30 @@ INSERT INTO rooms (
     $1, $2, $3, $4, $5
 );
 
+-- name: SetRoomOwner :exec
+UPDATE rooms 
+SET
+    machine_uuid = $2
+WHERE 
+    uuid = $1
+AND
+    machine_uuid = $3;
+
 -- name: DeleteRoom :exec
 DELETE FROM rooms
 WHERE uuid = $1;
 
 
+-- name: GetOrphanedRooms :many
+SELECT * FROM rooms
+WHERE machine_uuid NOT IN (
+SELECT uuid
+FROM machines
+WHERE last_updated < NOW() - INTERVAL '5 seconds'
+);
 
+-- name: GetRoomsByMachine :many
+SELECT * FROM rooms WHERE machine_uuid = $1;
 
 
 --CREATE TABLE room_membership (

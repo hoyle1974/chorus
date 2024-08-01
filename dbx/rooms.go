@@ -2,17 +2,72 @@ package dbx
 
 import (
 	"context"
+	"time"
 
 	"github.com/hoyle1974/chorus/db"
 	"github.com/hoyle1974/chorus/misc"
 )
 
-func (r QueriesX) GetRooms() {
-	r.q.GetRooms(context.Background())
+type Room struct {
+	Uuid            misc.RoomId
+	MachineUuid     misc.MachineId
+	Name            string
+	Script          string
+	DestroyOnOrphan bool
+	CreatedAt       time.Time
+	LastUpdated     time.Time
 }
 
-func (r QueriesX) CreateRoom(roomId misc.RoomId, machineId misc.MachineId, name string, script string, destroyOnOrphan bool) {
-	r.q.CreateRoom(context.Background(), db.CreateRoomParams{
+func toRoom(in db.Room) Room {
+	return Room{
+		Uuid:            misc.RoomId(in.Uuid),
+		MachineUuid:     misc.MachineId(in.MachineUuid),
+		Name:            in.Name,
+		Script:          in.Script,
+		DestroyOnOrphan: in.DestroyOnOrphan,
+		CreatedAt:       in.CreatedAt.Time,
+		LastUpdated:     in.LastUpdated.Time,
+	}
+}
+
+func (r QueriesX) GetRooms() ([]Room, error) {
+	rows, err := r.q.GetRooms(context.Background())
+	rooms := []Room{}
+	if err != nil {
+		return rooms, err
+	}
+	for _, dbRoom := range rows {
+		rooms = append(rooms, toRoom(dbRoom))
+	}
+	return rooms, err
+}
+
+func (r QueriesX) GetOrphanedRooms() ([]Room, error) {
+	rows, err := r.q.GetOrphanedRooms(context.Background())
+	rooms := []Room{}
+	if err != nil {
+		return rooms, err
+	}
+	for _, dbRoom := range rows {
+		rooms = append(rooms, toRoom(dbRoom))
+	}
+	return rooms, err
+}
+
+func (r QueriesX) GetRoomsByMachine(machineId misc.MachineId) ([]Room, error) {
+	rows, err := r.q.GetRoomsByMachine(context.Background(), string(machineId))
+	rooms := []Room{}
+	if err != nil {
+		return rooms, err
+	}
+	for _, dbRoom := range rows {
+		rooms = append(rooms, toRoom(dbRoom))
+	}
+	return rooms, err
+}
+
+func (r QueriesX) CreateRoom(roomId misc.RoomId, machineId misc.MachineId, name string, script string, destroyOnOrphan bool) error {
+	return r.q.CreateRoom(context.Background(), db.CreateRoomParams{
 		Uuid:            string(roomId),
 		MachineUuid:     string(machineId),
 		Name:            name,
@@ -37,4 +92,8 @@ func (r QueriesX) RemoveRoomMember(roomId misc.RoomId, connectionId misc.Connect
 		RoomUuid:       string(roomId),
 		ConnectionUuid: string(connectionId),
 	})
+}
+
+func (r QueriesX) SetRoomOwner(roomId misc.RoomId, oldOwner misc.MachineId, newOwner misc.MachineId) error {
+	return r.q.SetRoomOwner(context.Background(), db.SetRoomOwnerParams{string(roomId), string(newOwner), string(oldOwner)})
 }

@@ -70,6 +70,43 @@ func (q *Queries) DeleteRoom(ctx context.Context, uuid string) error {
 	return err
 }
 
+const getOrphanedRooms = `-- name: GetOrphanedRooms :many
+SELECT uuid, machine_uuid, name, script, destroy_on_orphan, created_at, last_updated FROM rooms
+WHERE machine_uuid NOT IN (
+SELECT uuid
+FROM machines
+WHERE last_updated < NOW() - INTERVAL '5 seconds'
+)
+`
+
+func (q *Queries) GetOrphanedRooms(ctx context.Context) ([]Room, error) {
+	rows, err := q.db.Query(ctx, getOrphanedRooms)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Room
+	for rows.Next() {
+		var i Room
+		if err := rows.Scan(
+			&i.Uuid,
+			&i.MachineUuid,
+			&i.Name,
+			&i.Script,
+			&i.DestroyOnOrphan,
+			&i.CreatedAt,
+			&i.LastUpdated,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getRooms = `-- name: GetRooms :many
 
 SELECT uuid, machine_uuid, name, script, destroy_on_orphan, created_at, last_updated FROM rooms
@@ -112,6 +149,38 @@ func (q *Queries) GetRooms(ctx context.Context) ([]Room, error) {
 	return items, nil
 }
 
+const getRoomsByMachine = `-- name: GetRoomsByMachine :many
+SELECT uuid, machine_uuid, name, script, destroy_on_orphan, created_at, last_updated FROM rooms WHERE machine_uuid = $1
+`
+
+func (q *Queries) GetRoomsByMachine(ctx context.Context, machineUuid string) ([]Room, error) {
+	rows, err := q.db.Query(ctx, getRoomsByMachine, machineUuid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Room
+	for rows.Next() {
+		var i Room
+		if err := rows.Scan(
+			&i.Uuid,
+			&i.MachineUuid,
+			&i.Name,
+			&i.Script,
+			&i.DestroyOnOrphan,
+			&i.CreatedAt,
+			&i.LastUpdated,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const removeRoomMember = `-- name: RemoveRoomMember :exec
 DELETE FROM room_membership 
 WHERE connection_uuid = $1 AND room_uuid = $2
@@ -124,5 +193,26 @@ type RemoveRoomMemberParams struct {
 
 func (q *Queries) RemoveRoomMember(ctx context.Context, arg RemoveRoomMemberParams) error {
 	_, err := q.db.Exec(ctx, removeRoomMember, arg.ConnectionUuid, arg.RoomUuid)
+	return err
+}
+
+const setRoomOwner = `-- name: SetRoomOwner :exec
+UPDATE rooms 
+SET
+    machine_uuid = $2
+WHERE 
+    uuid = $1
+AND
+    machine_uuid = $3
+`
+
+type SetRoomOwnerParams struct {
+	Uuid          string
+	MachineUuid   string
+	MachineUuid_2 string
+}
+
+func (q *Queries) SetRoomOwner(ctx context.Context, arg SetRoomOwnerParams) error {
+	_, err := q.db.Exec(ctx, setRoomOwner, arg.Uuid, arg.MachineUuid, arg.MachineUuid_2)
 	return err
 }

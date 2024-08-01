@@ -36,8 +36,12 @@ func (c QueriesX) GetConnections() ([]Connection, error) {
 	return connections, err
 }
 
-func (c QueriesX) FindMachine(id misc.ConnectionId) {
-	c.q.FindMachine(context.Background(), string(id))
+func (c QueriesX) FindMachine(id misc.ConnectionId) misc.MachineId {
+	conn, err := c.q.FindMachine(context.Background(), string(id))
+	if err != nil {
+		return misc.NilMachineId
+	}
+	return toConnection(conn).MachineUuid
 }
 
 func (c QueriesX) CreateConnection(connectionId misc.ConnectionId, machineId misc.MachineId) {

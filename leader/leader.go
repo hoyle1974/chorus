@@ -27,12 +27,13 @@ type LeaderContext interface {
 }
 
 type LeaderService struct {
-	dbx           dbx.DBX
-	machineId     misc.MachineId
-	logger        *slog.Logger
-	machineType   string
-	onLeaderStart onLeader
-	onLeaderTick  onLeader
+	dbx              dbx.DBX
+	machineId        misc.MachineId
+	logger           *slog.Logger
+	machineType      string
+	onLeaderStart    onLeader
+	onLeaderTick     onLeader
+	onMachineOffline onMachineOffline
 }
 
 func (ms LeaderService) Destroy() error {
@@ -41,16 +42,35 @@ func (ms LeaderService) Destroy() error {
 	return err
 }
 
-type onLeader func(logger *slog.Logger, q dbx.QueriesX)
+type LeaderQueryContext interface {
+	LeaderContext
+	Query() dbx.QueriesX
+}
 
-func StartLeaderService(ctx LeaderContext, onLeaderStart onLeader, onLeaderTick onLeader) (LeaderService, error) {
+type leaderQueryContextImpl struct {
+	logger      *slog.Logger
+	machineId   misc.MachineId
+	machineType string
+	q           dbx.QueriesX
+}
+
+func (l leaderQueryContextImpl) Logger() *slog.Logger      { return l.logger }
+func (l leaderQueryContextImpl) MachineId() misc.MachineId { return l.machineId }
+func (l leaderQueryContextImpl) MachineType() string       { return l.machineType }
+func (l leaderQueryContextImpl) Query() dbx.QueriesX       { return l.q }
+
+type onLeader func(ctx LeaderQueryContext)
+type onMachineOffline func(ctx LeaderQueryContext, machineId misc.MachineId)
+
+func StartLeaderService(ctx LeaderContext, onLeaderStart onLeader, onLeaderTick onLeader, onMachineOffline onMachineOffline) (LeaderService, error) {
 	ms := LeaderService{
-		logger:        ctx.Logger().With("machineId", ctx.MachineId(), "type", ctx.MachineType()),
-		machineId:     ctx.MachineId(),
-		dbx:           dbx.Dbx(),
-		machineType:   ctx.MachineType(),
-		onLeaderStart: onLeaderStart,
-		onLeaderTick:  onLeaderTick,
+		logger:           ctx.Logger().With("machineId", ctx.MachineId(), "type", ctx.MachineType()),
+		machineId:        ctx.MachineId(),
+		dbx:              dbx.Dbx(),
+		machineType:      ctx.MachineType(),
+		onLeaderStart:    onLeaderStart,
+		onLeaderTick:     onLeaderTick,
+		onMachineOffline: onMachineOffline,
 	}
 	defer ms.logger.Info("Leader Service Started . . .")
 
@@ -124,7 +144,13 @@ func (ms LeaderService) monitorLeadership() {
 	}
 	q := dbx.Dbx().Queries(db.New(conn))
 
-	ms.onLeaderStart(ms.logger, q)
+	lqc := leaderQueryContextImpl{
+		logger:      ms.logger,
+		machineId:   ms.machineId,
+		machineType: ms.machineType,
+		q:           q,
+	}
+	ms.onLeaderStart(lqc)
 
 	for {
 		time.Sleep(time.Duration(1) * time.Second)
@@ -134,6 +160,7 @@ func (ms LeaderService) monitorLeadership() {
 			for _, machine := range machines {
 				if now.Sub(machine.LastUpdated).Seconds() > 5 {
 					ms.logger.Debug("Delete machine", "machineToDelete", machine.Uuid)
+					ms.onMachineOffline(lqc, machine.Uuid)
 					err := q.DeleteMachine(machine.Uuid)
 					if err != nil {
 						ms.logger.Error("Problem deleting machine", "error", err)
@@ -144,7 +171,7 @@ func (ms LeaderService) monitorLeadership() {
 			ms.logger.Error("Trouble getting a list of all machines", "error", err)
 		}
 
-		ms.onLeaderTick(ms.logger, q)
+		ms.onLeaderTick(lqc)
 
 	}
 }
@@ -184,9 +211,16 @@ func (ms LeaderService) waitForLeader() {
 				machine, err := q.GetMachine(machineId)
 				if err == nil {
 					// Leader machine has timed out
-					if time.Now().Sub(machine.LastUpdated).Seconds() > 5 {
+					if time.Since(machine.LastUpdated).Seconds() > 5 {
 						ms.logger.Warn("Leader deadline exceeded, let's try to become the leader now")
 
+						lqc := leaderQueryContextImpl{
+							logger:      ms.logger,
+							machineId:   ms.machineId,
+							machineType: ms.machineType,
+							q:           q,
+						}
+						ms.onMachineOffline(lqc, machine.Uuid)
 						err = q.DeleteMachine(machineId)
 						if err == nil {
 							err := q.SetMachineAsLeader(ms.machineId)

@@ -37,7 +37,7 @@ EXECUTE FUNCTION notify_machine_update_trigger();
 -- When the machine table is cleaned it either deletes rooms or rehomes them
 CREATE TABLE rooms (
     uuid TEXT PRIMARY KEY,
-    machine_uuid TEXT NOT NULL REFERENCES machines(uuid),
+    machine_uuid TEXT NOT NULL REFERENCES machines(uuid) ,
     name TEXT NOT NULL,
     script TEXT NOT NULL,
     destroy_on_orphan BOOLEAN NOT NULL,

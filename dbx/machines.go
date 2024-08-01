@@ -61,6 +61,17 @@ func (c QueriesX) GetMachine(machineId misc.MachineId) (Machine, error) {
 	return toMachine(s), err
 }
 
+func (c QueriesX) IsMachineOnline(machineId misc.MachineId) (bool, error) {
+	machine, err := c.GetMachine(machineId)
+	if err != nil {
+		return false, err
+	}
+	if time.Since(machine.LastUpdated) < time.Duration(5)*time.Second {
+		return true, nil
+	}
+	return false, nil
+}
+
 func (c QueriesX) TouchMachine(machineId misc.MachineId) error {
 	return c.q.TouchMachine(timeoutCtx(5), string(machineId))
 }
