@@ -51,8 +51,9 @@ func NewConnection(state GlobalServerState, conn net.Conn) *ClientConnection {
 	}
 	c.logger = state.logger.With("connectionId", c.id)
 
-	if !state.ownership.ClaimOwnership(c.id, time.Duration(30)) {
-		c.logger.Error("This machinei could not claim ownership", "id", c.id)
+	err := c.state.q.CreateConnection(c.id, state.machineId)
+	if err != nil {
+		c.logger.Error("Could not create connection", "id", c.id, "error", err)
 		return nil
 	}
 
@@ -60,9 +61,23 @@ func NewConnection(state GlobalServerState, conn net.Conn) *ClientConnection {
 	connections[c.id] = &c
 	connectionLock.Unlock()
 
+	go func() {
+		for {
+			time.Sleep(time.Duration(3) * time.Second)
+			connectionLock.Lock()
+			_, ok := connections[c.id]
+			connectionLock.Unlock()
+			if ok {
+				state.q.TouchConnection(c.id)
+			} else {
+				return
+			}
+		}
+	}()
+
 	return &c
 }
-func findClientConnection(id misc.ConnectionId) *ClientConnection {
+func findLocalClientConnection(id misc.ConnectionId) *ClientConnection {
 	connectionLock.Lock()
 	defer connectionLock.Unlock()
 
@@ -73,7 +88,10 @@ func findClientConnection(id misc.ConnectionId) *ClientConnection {
 
 func (c *ClientConnection) Close() {
 	//TODO room.LeaveAllRooms(misc.ListenerId(c.id))
-	c.state.ownership.ReleaseOwnership(c.id)
+	err := c.state.q.DeleteConnection(c.id)
+	if err != nil {
+		c.state.logger.Warn("Error deleting connection", "error", err, "connectionId", c.id)
+	}
 
 	if c.conn != nil {
 		c.conn.Close()
@@ -103,7 +121,7 @@ func (c *ClientConnection) OnMessageFromTopic(m pubsub.Message) {
 func (c *ClientConnection) joinRoom(roomId misc.RoomId) {
 	c.conn.Write([]byte(">>> Joining " + roomId + "\n"))
 	if c.consumer == nil {
-		c.consumer = pubsub.NewConsumer(c.logger, roomId.Topic(), c)
+		c.consumer = pubsub.NewConsumer(c.logger, string(c.state.machineId), roomId.Topic(), c)
 	} else {
 		c.consumer.AddTopic(roomId.Topic())
 	}

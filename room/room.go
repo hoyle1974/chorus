@@ -380,7 +380,7 @@ func Join(roomId misc.RoomId, listenerId misc.ListenerId, handler pubsub.TopicMe
 
 	consumerId := string(roomId + ":" + misc.RoomId(listenerId))
 	consumersLock.Lock()
-	consumer := pubsub.NewConsumer(nil, roomId.Topic(), handler)
+	consumer := pubsub.NewConsumer(nil, string(listenerId), roomId.Topic(), handler)
 	consumers[consumerId] = consumer
 	list, ok := roomsByListener[listenerId]
 	if !ok {

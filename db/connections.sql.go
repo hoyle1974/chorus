@@ -91,3 +91,14 @@ func (q *Queries) GetConnections(ctx context.Context) ([]Connection, error) {
 	}
 	return items, nil
 }
+
+const touchConnection = `-- name: TouchConnection :exec
+UPDATE connections 
+SET last_updated = now()
+WHERE uuid = $1
+`
+
+func (q *Queries) TouchConnection(ctx context.Context, uuid string) error {
+	_, err := q.db.Exec(ctx, touchConnection, uuid)
+	return err
+}

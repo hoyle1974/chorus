@@ -44,10 +44,14 @@ func (c QueriesX) FindMachine(id misc.ConnectionId) misc.MachineId {
 	return toConnection(conn).MachineUuid
 }
 
-func (c QueriesX) CreateConnection(connectionId misc.ConnectionId, machineId misc.MachineId) {
-	c.q.CreateConnection(context.Background(), db.CreateConnectionParams{Uuid: string(connectionId), MachineUuid: string(machineId)})
+func (c QueriesX) CreateConnection(connectionId misc.ConnectionId, machineId misc.MachineId) error {
+	return c.q.CreateConnection(context.Background(), db.CreateConnectionParams{Uuid: string(connectionId), MachineUuid: string(machineId)})
 }
 
 func (c QueriesX) DeleteConnection(connectionId misc.ConnectionId) error {
 	return c.q.DeleteConnection(context.Background(), string(connectionId))
+}
+
+func (c QueriesX) TouchConnection(connectionId misc.ConnectionId) error {
+	return c.q.TouchConnection(context.Background(), string(connectionId))
 }

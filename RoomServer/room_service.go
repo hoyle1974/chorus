@@ -43,6 +43,27 @@ type RoomService struct {
 	localRooms map[misc.RoomId]*Room
 }
 
+func (rs *RoomService) AddMember(roomId misc.RoomId, connectionId misc.ConnectionId) {
+	q := dbx.Dbx().Queries(db.New(dbx.GetConn()))
+	q.AddRoomMember(roomId, connectionId)
+}
+
+func (rs *RoomService) RemoveMember(roomId misc.RoomId, connectionId misc.ConnectionId) {
+	q := dbx.Dbx().Queries(db.New(dbx.GetConn()))
+	q.RemoveRoomMember(roomId, connectionId)
+}
+
+func (rs *RoomService) DeleteRoom(roomId misc.RoomId) {
+	q := dbx.Dbx().Queries(db.New(dbx.GetConn()))
+	members, err := q.GetRoomMembers(roomId)
+	if err != nil {
+		for _, member := range members {
+			rs.RemoveMember(roomId, member)
+		}
+	}
+	pubsub.DeleteTopic(roomId.Topic())
+}
+
 func StartLocalRoomService(state GlobalServerState) *RoomService {
 	rs := &RoomService{
 		state:      state,
@@ -91,51 +112,16 @@ func (rs *RoomService) BootstrapLobby() bool {
 	return err == nil
 }
 
-func (rs *RoomService) NewRoom(info RoomInfo) (*Room, error) {
+func (rs *RoomService) _NewRoom(info RoomInfo) (*Room, error) {
+	rs.state.logger.Debug("NewRoom", "info", info)
 	q := dbx.Dbx().Queries(db.New(dbx.GetConn()))
 	err := q.CreateRoom(info.RoomId, rs.state.MachineId(), info.Name, info.AdminScript, info.DestroyOnOrphan)
 	if err != nil {
 		return nil, err
 	}
+	pubsub.CreateTopic(info.RoomId.Topic())
 	return rs.bindRoomToThisMachine(info), nil
 }
-
-// func (rs *RoomService) getRoomInfo(roomId misc.RoomId) RoomInfo {
-// 	infoS, err := rs.state.dist.Get(roomId.RoomKey())
-// 	if err != nil {
-// 		return RoomInfo{}
-// 	}
-// 	return NewRoomInfoFromString(infoS)
-// }
-
-/*
-func (rs *RoomService) isOwnerOnline(roomId misc.RoomId) bool {
-	m, err := rs.gss.dist.Get(roomId.OwnershipKey())
-	if err == redis.Nil {
-		return false
-	}
-	machineId := misc.MachineId(m)
-	_, err = rs.gss.dist.Get(machineId.MachineKey())
-	if err == redis.Nil {
-		return false
-	}
-	return true
-}
-*/
-
-/*
-func (rs *RoomService) waitForOwnership(roomId misc.RoomId) {
-	rs.gss.logger.Debug("Waiting for owernship", "roomId", roomId)
-	for {
-		b, _ := rs.gss.dist.PutIfAbsent(roomId.OwnershipKey(), string(rs.gss.machineId), rs.gss.machineLease)
-		if b {
-			rs.gss.logger.Info("We are the owner", "roomId", roomId)
-			return
-		}
-		time.Sleep(time.Duration(1) * time.Second)
-	}
-}
-*/
 
 // We are the owner, but we need to bind a local struct to the
 // instance in redis
@@ -147,12 +133,7 @@ func (rs *RoomService) bindRoomToThisMachine(info RoomInfo) *Room {
 		roomService: rs,
 		info:        info,
 		logger:      rs.state.logger.With("info", info),
-		// members:     rs.state.dist.BindSet(info.RoomId.RoomMembershipKey()),
 	}
-	// _, err := rs.rooms.SAdd(string(info.RoomId))
-	// if err != nil {
-	// 	panic(err)
-	// }
 
 	ctx, err := createScriptEnvironmentForRoom(r, info.AdminScript)
 	if err != nil {
@@ -161,7 +142,7 @@ func (rs *RoomService) bindRoomToThisMachine(info RoomInfo) *Room {
 	}
 	r.ctx = ctx
 
-	r.consumer = pubsub.NewConsumer(r.logger, info.RoomId.Topic(), r)
+	r.consumer = pubsub.NewConsumer(r.logger, string(rs.state.machineId), info.RoomId.Topic(), r)
 	r.consumer.StartConsumer(&message.Message{})
 	time.Sleep(time.Duration(1) * time.Second)
 

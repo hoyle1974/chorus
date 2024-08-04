@@ -80,6 +80,20 @@ func (r QueriesX) DeleteRoom(roomId misc.RoomId) {
 	r.q.DeleteRoom(context.Background(), string(roomId))
 }
 
+func (r QueriesX) GetRoomMembers(roomId misc.RoomId) ([]misc.ConnectionId, error) {
+	ret := []misc.ConnectionId{}
+
+	rows, err := r.q.GetRoomMembers(context.Background(), string(roomId))
+	if err != nil {
+		return ret, err
+	}
+
+	for _, row := range rows {
+		ret = append(ret, misc.ConnectionId(row))
+	}
+	return ret, nil
+}
+
 func (r QueriesX) AddRoomMember(roomId misc.RoomId, connectionId misc.ConnectionId) {
 	r.q.AddRoomMember(context.Background(), db.AddRoomMemberParams{
 		RoomUuid:       string(roomId),

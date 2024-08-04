@@ -23,3 +23,8 @@ WHERE uuid = $1;
 -- name: FindMachine :one
 SELECT * FROM connections
 WHERE uuid = $1;
+
+-- name: TouchConnection :exec
+UPDATE connections 
+SET last_updated = now()
+WHERE uuid = $1;

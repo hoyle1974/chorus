@@ -57,3 +57,6 @@ INSERT INTO room_membership (
 -- name: RemoveRoomMember :exec
 DELETE FROM room_membership 
 WHERE connection_uuid = $1 AND room_uuid = $2;
+
+-- name: GetRoomMembers :many
+SELECT connection_uuid FROM room_membership where room_uuid = $1;

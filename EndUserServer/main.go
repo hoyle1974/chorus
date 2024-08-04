@@ -10,7 +10,6 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/hoyle1974/chorus/leader"
 	"github.com/hoyle1974/chorus/misc"
-	"github.com/hoyle1974/chorus/ownership"
 )
 
 func onLeaderStartFunc(ctx leader.LeaderQueryContext) {
@@ -51,8 +50,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	state.ownership = ownership.StartLocalOwnershipService(state)
 
 	ln, err := net.Listen("tcp", ":8181") // Port can be changed here
 	if err != nil {

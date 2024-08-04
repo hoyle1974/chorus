@@ -7,12 +7,9 @@ import (
 
 	"github.com/hoyle1974/chorus/db"
 	"github.com/hoyle1974/chorus/dbx"
-	"github.com/hoyle1974/chorus/distributed"
 	"github.com/hoyle1974/chorus/message"
 	"github.com/hoyle1974/chorus/misc"
-	"github.com/hoyle1974/chorus/ownership"
 	"github.com/hoyle1974/chorus/pubsub"
-	"github.com/hoyle1974/chorus/store"
 	"rogchap.com/v8go"
 )
 
@@ -22,19 +19,25 @@ import (
 // the other will wait for the other server to go away.
 type Room struct {
 	state       GlobalServerState
+	topic       misc.TopicId
 	roomService *RoomService
-	ownership   *ownership.OwnershipService
 	logger      *slog.Logger
 	info        RoomInfo
-	members     distributed.Set
 	consumer    *pubsub.Consumer
 	ctx         *v8go.Context
 }
 
+func (r *Room) AddMember(id misc.ConnectionId) {
+	r.roomService.AddMember(r.info.RoomId, id)
+}
+
+func (r *Room) RemoveMember(id misc.ConnectionId) {
+	r.roomService.RemoveMember(r.info.RoomId, id)
+}
+
 func (r *Room) Destroy() {
 	r.logger.Info("Deleting room")
-	// r.state.dist.Del(r.info.RoomId.RoomKey())
-	// r.roomService.rooms.SRem(r.info.RoomId)
+	r.roomService.DeleteRoom(r.info.RoomId)
 }
 
 func (r *Room) OnMessageFromTopic(m pubsub.Message) {
@@ -50,18 +53,15 @@ func (r *Room) OnMessageFromTopic(m pubsub.Message) {
 
 	if msg.Cmd == "Pong" {
 		r.logger.Debug("Pong", "memberId", msg.SenderId)
-		r.members.SAdd(string(msg.SenderId))
-		store.AddMemberToSet(r.info.RoomId.RoomMembershipKey(), string(msg.SenderId))
+		r.AddMember(misc.ConnectionId(msg.SenderId))
 	}
 	if msg.Cmd == "Join" {
 		r.logger.Debug("Join", "memberId", msg.SenderId)
-		r.members.SAdd(string(msg.SenderId))
-		store.AddMemberToSet(r.info.RoomId.RoomMembershipKey(), string(msg.SenderId))
+		r.AddMember(misc.ConnectionId(msg.SenderId))
 	}
 	if msg.Cmd == "Leave" {
 		r.logger.Debug("Leave", "memberId", msg.SenderId)
-		r.members.SRem(string(msg.SenderId))
-		store.RemoveMemberFromSet(r.info.RoomId.RoomMembershipKey(), string(msg.SenderId))
+		r.RemoveMember(misc.ConnectionId(msg.SenderId))
 	}
 
 	r.callJSOnMessage(msg)
@@ -89,7 +89,7 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 
 	data, err := os.ReadFile(adminScriptFilename)
 	if err != nil {
-		return nil, fmt.Errorf("Error Reading File: %w", err)
+		return nil, fmt.Errorf("error Reading File: %w", err)
 	}
 	content := string(data)
 
@@ -175,7 +175,7 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 		objTemplate := room.JSTemplate(isolate)
 		obj, err := objTemplate.NewInstance(room.ctx)
 		if err != nil {
-			room.logger.Error(fmt.Sprintf("js objTemplate NewInstance: %w", err))
+			room.logger.Error("js objTemplate NewInstance", "error", err)
 			return nil
 		}
 		return obj.Value

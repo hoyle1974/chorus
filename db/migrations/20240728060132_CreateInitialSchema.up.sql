@@ -61,8 +61,8 @@ CREATE TABLE connections (
 );
 
 CREATE TABLE room_membership (
-    connection_uuid TEXT NOT NULL REFERENCES connections(uuid) ON DELETE CASCADE,
-    room_uuid TEXT NOT NULL REFERENCES rooms(uuid) ON DELETE CASCADE
+    connection_uuid TEXT NOT NULL REFERENCES connections(uuid) ,
+    room_uuid TEXT NOT NULL REFERENCES rooms(uuid)
 );
 
 CREATE INDEX idx_room_membership_connection_uuid ON room_membership (connection_uuid);

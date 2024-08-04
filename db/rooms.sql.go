@@ -107,6 +107,30 @@ func (q *Queries) GetOrphanedRooms(ctx context.Context) ([]Room, error) {
 	return items, nil
 }
 
+const getRoomMembers = `-- name: GetRoomMembers :many
+SELECT connection_uuid FROM room_membership where room_uuid = $1
+`
+
+func (q *Queries) GetRoomMembers(ctx context.Context, roomUuid string) ([]string, error) {
+	rows, err := q.db.Query(ctx, getRoomMembers, roomUuid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var connection_uuid string
+		if err := rows.Scan(&connection_uuid); err != nil {
+			return nil, err
+		}
+		items = append(items, connection_uuid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getRooms = `-- name: GetRooms :many
 
 SELECT uuid, machine_uuid, name, script, destroy_on_orphan, created_at, last_updated FROM rooms
