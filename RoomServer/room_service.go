@@ -112,7 +112,7 @@ func (rs *RoomService) BootstrapLobby() bool {
 	return err == nil
 }
 
-func (rs *RoomService) _NewRoom(info RoomInfo) (*Room, error) {
+func (rs *RoomService) NewRoom(info RoomInfo) (*Room, error) {
 	rs.state.logger.Debug("NewRoom", "info", info)
 	q := dbx.Dbx().Queries(db.New(dbx.GetConn()))
 	err := q.CreateRoom(info.RoomId, rs.state.MachineId(), info.Name, info.AdminScript, info.DestroyOnOrphan)
