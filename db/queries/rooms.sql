@@ -60,3 +60,6 @@ WHERE connection_uuid = $1 AND room_uuid = $2;
 
 -- name: GetRoomMembers :many
 SELECT connection_uuid FROM room_membership where room_uuid = $1;
+
+-- name: GetMembershipByConnection :many
+SELECt room_uuid from room_membership where connection_uuid = $1;

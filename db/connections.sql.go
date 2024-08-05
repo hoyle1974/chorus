@@ -92,6 +92,36 @@ func (q *Queries) GetConnections(ctx context.Context) ([]Connection, error) {
 	return items, nil
 }
 
+const getConnectionsByMachine = `-- name: GetConnectionsByMachine :many
+SELECT uuid, machine_uuid, created_at, last_updated FROM connections
+WHERE machine_uuid = $1
+`
+
+func (q *Queries) GetConnectionsByMachine(ctx context.Context, machineUuid string) ([]Connection, error) {
+	rows, err := q.db.Query(ctx, getConnectionsByMachine, machineUuid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Connection
+	for rows.Next() {
+		var i Connection
+		if err := rows.Scan(
+			&i.Uuid,
+			&i.MachineUuid,
+			&i.CreatedAt,
+			&i.LastUpdated,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const touchConnection = `-- name: TouchConnection :exec
 UPDATE connections 
 SET last_updated = now()

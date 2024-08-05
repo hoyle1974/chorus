@@ -117,7 +117,6 @@ func createScriptEnvironmentForRoom(room *Room, adminScriptFilename string) (*v8
 		msg := message.NewMessageFromString(jsonString)
 		msg.RoomId = room.info.RoomId
 		msg.SenderId = room.info.RoomId.ListenerId()
-		//TODO room.sendMsg(msg)
 		pubsub.SendMessage(&msg)
 
 		return nil // you can return a value back to the JS caller if required
@@ -209,7 +208,7 @@ func (r *Room) JSTemplate(isolate *v8go.Isolate) *v8go.ObjectTemplate {
 		q := dbx.Dbx().Queries(db.New(dbx.GetConn()))
 		mid := q.FindMachine(id)
 
-		fmt.Println("Looked up ", id, " and found on ", mid)
+		fmt.Println("Looked up", id, " and found on ", mid)
 
 		// What EUS is that client on?
 		cmd := message.NewClientCmd(mid, id.ListenerId(), "ClientJoin", map[string]interface{}{"RoomId": r.info.RoomId})

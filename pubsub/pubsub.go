@@ -2,6 +2,7 @@ package pubsub
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync/atomic"
 
@@ -55,11 +56,12 @@ func TopicExists(topic misc.TopicId) bool {
 
 func CreateTopic(topic misc.TopicId) {
 	ctx := context.Background()
-	client := getAdminConn()
+	client := newAdminConn()
 	defer client.Close()
 
 	_, err := client.CreateTopic(ctx, 1, 1, nil, string(topic))
 	if err != nil {
+		fmt.Printf("Error trying to create: [%v]\n", topic)
 		panic(err)
 	}
 }

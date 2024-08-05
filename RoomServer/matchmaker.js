@@ -1,6 +1,5 @@
 var id= ""
 
-
 function onJoin(msg) {  
   log("Hello from onJoin")
   if (id==="") {

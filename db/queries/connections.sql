@@ -28,3 +28,7 @@ WHERE uuid = $1;
 UPDATE connections 
 SET last_updated = now()
 WHERE uuid = $1;
+
+-- name: GetConnectionsByMachine :many
+SELECT * FROM connections
+WHERE machine_uuid = $1;

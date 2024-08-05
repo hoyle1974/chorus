@@ -111,3 +111,16 @@ func (r QueriesX) RemoveRoomMember(roomId misc.RoomId, connectionId misc.Connect
 func (r QueriesX) SetRoomOwner(roomId misc.RoomId, oldOwner misc.MachineId, newOwner misc.MachineId) error {
 	return r.q.SetRoomOwner(context.Background(), db.SetRoomOwnerParams{string(roomId), string(newOwner), string(oldOwner)})
 }
+
+func (r QueriesX) GetMembershipByConnection(connectionId misc.ConnectionId) ([]misc.ConnectionId, error) {
+	ret := []misc.ConnectionId{}
+
+	rows, err := r.q.GetMembershipByConnection(context.Background(), string(connectionId))
+	if err == nil {
+		for _, row := range rows {
+			ret = append(ret, misc.ConnectionId(row))
+		}
+	}
+
+	return ret, err
+}

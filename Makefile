@@ -1,5 +1,5 @@
 queries:
-	#@rm db/*.go
+	-rm db/*.go
 	sqlc generate
 	
 

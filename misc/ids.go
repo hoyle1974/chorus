@@ -43,7 +43,7 @@ func (id MachineId) MachineKey() string {
 	return string("machines/" + id)
 }
 func (id MachineId) ClientCmdTopic() TopicId {
-	return TopicId("topics/machines/" + id + "/clientcmd")
+	return TopicId("ClientCmd-" + id)
 }
 
 const globalLobbyId = RoomId("GlobalLobby")

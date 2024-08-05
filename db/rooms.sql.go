@@ -70,6 +70,30 @@ func (q *Queries) DeleteRoom(ctx context.Context, uuid string) error {
 	return err
 }
 
+const getMembershipByConnection = `-- name: GetMembershipByConnection :many
+SELECt room_uuid from room_membership where connection_uuid = $1
+`
+
+func (q *Queries) GetMembershipByConnection(ctx context.Context, connectionUuid string) ([]string, error) {
+	rows, err := q.db.Query(ctx, getMembershipByConnection, connectionUuid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var room_uuid string
+		if err := rows.Scan(&room_uuid); err != nil {
+			return nil, err
+		}
+		items = append(items, room_uuid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getOrphanedRooms = `-- name: GetOrphanedRooms :many
 SELECT uuid, machine_uuid, name, script, destroy_on_orphan, created_at, last_updated FROM rooms
 WHERE machine_uuid NOT IN (

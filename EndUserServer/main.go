@@ -9,12 +9,37 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/hoyle1974/chorus/leader"
+	"github.com/hoyle1974/chorus/message"
 	"github.com/hoyle1974/chorus/misc"
+	"github.com/hoyle1974/chorus/pubsub"
 )
 
 func onLeaderStartFunc(ctx leader.LeaderQueryContext) {
 	// logger.Debug("onLeaderStartFunc")
 }
+
+func leaveRoom(connectionId misc.ConnectionId, roomId misc.RoomId) {
+	msg := message.Leave(roomId, connectionId)
+	pubsub.SendMessage(&msg)
+}
+
+func deleteConnection(ctx leader.LeaderQueryContext, connectionId misc.ConnectionId) {
+	ctx.Logger().Debug("Delete connection", "connectionId", connectionId)
+
+	roomIds, err := ctx.Query().GetMembershipByConnection(connectionId)
+	if err != nil {
+		ctx.Logger().Error("Problem getting room membership", "error", err, "connectionId", connectionId)
+	}
+	for _, roomId := range roomIds {
+		leaveRoom(connectionId, misc.RoomId(roomId))
+	}
+
+	err = ctx.Query().DeleteConnection(connectionId)
+	if err != nil {
+		ctx.Logger().Error("Problem deleting connection", "error", err, "connectionId", connectionId)
+	}
+}
+
 func onLeaderTickFunc(ctx leader.LeaderQueryContext) {
 	// logger.Debug("onLeaderTickFunc")
 
@@ -24,11 +49,7 @@ func onLeaderTickFunc(ctx leader.LeaderQueryContext) {
 	if err == nil {
 		for _, connection := range connections {
 			if now.Sub(connection.LastUpdated).Seconds() > 5 {
-				ctx.Logger().Debug("Delete connection", "connectionId", connection.Uuid)
-				err := ctx.Query().DeleteConnection(connection.Uuid)
-				if err != nil {
-					ctx.Logger().Error("Problem deleting connection", "error", err)
-				}
+				deleteConnection(ctx, connection.Uuid)
 			}
 		}
 	} else {
@@ -37,6 +58,14 @@ func onLeaderTickFunc(ctx leader.LeaderQueryContext) {
 }
 func onMachineOffline(ctx leader.LeaderQueryContext, machineId misc.MachineId) {
 	// We have a machine that is offline, what cleanup should we do?
+	connections, err := ctx.Query().GetConnectionsByMachine(machineId)
+	if err == nil {
+		for _, connection := range connections {
+			deleteConnection(ctx, connection.Uuid)
+		}
+	} else {
+		ctx.Logger().Error("Could not get connectins by machine", "machineId", machineId, "error", err)
+	}
 
 }
 
@@ -65,6 +94,7 @@ func main() {
 		// Do any cleanup
 		leader.Destroy()
 		cleanupConnections()
+		state.Destroy()
 		os.Exit(0)
 	}()
 

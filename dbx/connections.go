@@ -55,3 +55,15 @@ func (c QueriesX) DeleteConnection(connectionId misc.ConnectionId) error {
 func (c QueriesX) TouchConnection(connectionId misc.ConnectionId) error {
 	return c.q.TouchConnection(context.Background(), string(connectionId))
 }
+
+func (c QueriesX) GetConnectionsByMachine(machineId misc.MachineId) ([]Connection, error) {
+	rows, err := c.q.GetConnectionsByMachine(context.Background(), string(machineId))
+	connections := []Connection{}
+	if err != nil {
+		return connections, err
+	}
+	for _, dbConnection := range rows {
+		connections = append(connections, toConnection(dbConnection))
+	}
+	return connections, err
+}

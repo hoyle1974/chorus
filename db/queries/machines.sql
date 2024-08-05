@@ -4,6 +4,8 @@ SELECT * FROM machines;
 -- name: GetMachinesByType :many
 SELECt * FROM machines where machine_type = $1;
 
+
+
 -- name: CreateMachine :exec
 INSERT INTO machines (
     uuid, machine_type

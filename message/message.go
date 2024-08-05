@@ -14,6 +14,13 @@ type Message struct {
 	Data       map[string]interface{}
 }
 
+func Join(roomId misc.RoomId, connectionId misc.ConnectionId) Message {
+	return NewMessage(roomId, misc.ListenerId(connectionId), "", "Join", map[string]interface{}{})
+}
+func Leave(roomId misc.RoomId, connectionId misc.ConnectionId) Message {
+	return NewMessage(roomId, misc.ListenerId(connectionId), "", "Leave", map[string]interface{}{})
+}
+
 func NewMessage(roomId misc.RoomId, senderId misc.ListenerId, receiverId misc.ListenerId, cmd string, data map[string]interface{}) Message {
 	if roomId == "" {
 		panic("roomId must exist")
@@ -49,11 +56,11 @@ func NewErrorMessage(roomId misc.RoomId, senderId misc.ListenerId, err error) Me
 	return NewMessage(roomId, senderId, "", "error", data)
 }
 
-func (m *Message) String() string {
+func (m Message) String() string {
 	jsonData, _ := json.Marshal(m)
 	return string(jsonData)
 }
-func (m *Message) Topic() misc.TopicId {
+func (m Message) Topic() misc.TopicId {
 	return m.RoomId.Topic()
 }
 

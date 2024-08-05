@@ -35,6 +35,11 @@ func getConn() *kgo.Client {
 	return db
 }
 
+func newAdminConn() *kadm.Client {
+	conn, _ := newConn()
+	return kadm.NewClient(conn)
+}
+
 func getAdminConn() *kadm.Client {
 	return kadm.NewClient(getConn())
 }

@@ -11,11 +11,17 @@ import (
 	"github.com/hoyle1974/chorus/pubsub"
 )
 
+type Queries interface {
+	CreateConnection(connectionId misc.ConnectionId, machineId misc.MachineId) error
+	TouchConnection(connectionId misc.ConnectionId) error
+	DeleteConnection(connectionId misc.ConnectionId) error
+}
+
 type GlobalServerState struct {
 	logger         *slog.Logger
 	machineId      misc.MachineId
 	clientCmdTopic *pubsub.Consumer
-	q              dbx.QueriesX
+	q              Queries
 }
 
 func (s GlobalServerState) Logger() *slog.Logger      { return s.logger }
@@ -29,10 +35,16 @@ func NewGlobalState(logger *slog.Logger) GlobalServerState {
 		q:         dbx.Dbx().Queries(db.New(dbx.GetConn())),
 	}
 
+	pubsub.CreateTopic(ss.machineId.ClientCmdTopic())
+
 	ss.clientCmdTopic = pubsub.NewConsumer(logger, string(ss.machineId), ss.machineId.ClientCmdTopic(), ss)
 	ss.clientCmdTopic.StartConsumer(&message.ClientCmd{})
 
 	return ss
+}
+
+func (s GlobalServerState) Destroy() {
+	pubsub.DeleteTopic(s.machineId.ClientCmdTopic())
 }
 
 func (s GlobalServerState) OnMessageFromTopic(m pubsub.Message) {
